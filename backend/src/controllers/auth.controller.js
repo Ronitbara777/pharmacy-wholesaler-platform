@@ -6,7 +6,6 @@ const prisma = require('../config/prisma');
 // Register new user
 const register = async (req, res) => {
   try {
-    // Check validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ 
@@ -57,18 +56,6 @@ const register = async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRE }
     );
-
-    // Log activity
-    await prisma.activity.create({
-      data: {
-        action: 'REGISTER',
-        entityType: 'USER',
-        userId: user.id,
-        details: { email: user.email },
-        ipAddress: req.ip,
-        device: req.headers['user-agent']
-      }
-    });
 
     res.status(201).json({
       success: true,
@@ -125,18 +112,6 @@ const login = async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRE }
     );
-
-    // Log activity
-    await prisma.activity.create({
-      data: {
-        action: 'LOGIN',
-        entityType: 'USER',
-        userId: user.id,
-        details: { email: user.email },
-        ipAddress: req.ip,
-        device: req.headers['user-agent']
-      }
-    });
 
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
