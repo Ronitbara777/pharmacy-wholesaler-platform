@@ -32,8 +32,19 @@ const limiter = rateLimit({
 app.use('/api', limiter);
 
 // CORS
-app.use(cors({
+/*app.use(cors({
   origin: process.env.CORS_ORIGIN?.split(',') || '*',
+  credentials: true
+}));*/
+
+app.use(cors({
+  origin: [
+    'http://localhost:8081',
+    'http://localhost:19006',
+    'https://ti3qeba-anonymous-8081.exp.direct', // Your Expo domain
+    'https://*.exp.direct', // Allow all Expo domains
+    'https://*.expo.dev' // Allow Expo dev domains
+  ],
   credentials: true
 }));
 

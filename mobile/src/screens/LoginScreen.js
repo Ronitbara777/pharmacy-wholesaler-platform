@@ -67,29 +67,36 @@ export default function LoginScreen({ navigation }) {
   };
 
   // Handle login
-  const handleLogin = async () => {
-    if (!validateForm()) return;
+  // Handle login
+const handleLogin = async () => {
+  if (!validateForm()) return;
+  
+  console.log('🔐 Attempting login with:', { email, password });
+  setLoading(true);
+  
+  try {
+    console.log('📡 Calling AuthService.login...');
+    const response = await AuthService.login(email, password);
+    console.log('📡 Login response:', response);
     
-    setLoading(true);
-    try {
-      const response = await AuthService.login(email, password);
-      
-      if (response.success) {
-        // Navigate to main app
-        navigation.replace('Main');
-      } else {
-        Alert.alert('Login Failed', response.message || 'Invalid credentials');
-      }
-    } catch (error) {
-      console.error('Login error:', error);
-      Alert.alert(
-        'Login Error',
-        error.message || 'Failed to connect to server. Please try again.'
-      );
-    } finally {
-      setLoading(false);
+    if (response.success) {
+      console.log('✅ Login successful, navigating to Main');
+      navigation.replace('Main');
+    } else {
+      console.log('❌ Login failed:', response.message);
+      Alert.alert('Login Failed', response.message || 'Invalid credentials');
     }
-  };
+  } catch (error) {
+    console.error('❌ Login error:', error);
+    console.error('❌ Error details:', JSON.stringify(error, null, 2));
+    Alert.alert(
+      'Login Error',
+      error.message || 'Failed to connect to server. Please try again.'
+    );
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Handle demo login (for testing)
   const handleDemoLogin = async () => {
