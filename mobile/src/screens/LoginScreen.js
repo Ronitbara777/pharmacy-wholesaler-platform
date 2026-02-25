@@ -68,34 +68,35 @@ export default function LoginScreen({ navigation }) {
 
   // Handle login
   // Handle login
-const handleLogin = async () => {
+const handleLogin = () => {
   if (!validateForm()) return;
   
-  console.log('🔐 Attempting login with:', { email, password });
+  console.log('🔐 Attempting login with:', { email });
   setLoading(true);
   
-  try {
-    console.log('📡 Calling AuthService.login...');
-    const response = await AuthService.login(email, password);
-    console.log('📡 Login response:', response);
-    
-    if (response.success) {
-      console.log('✅ Login successful, navigating to Main');
-      navigation.replace('Main');
-    } else {
-      console.log('❌ Login failed:', response.message);
-      Alert.alert('Login Failed', response.message || 'Invalid credentials');
-    }
-  } catch (error) {
-    console.error('❌ Login error:', error);
-    console.error('❌ Error details:', JSON.stringify(error, null, 2));
-    Alert.alert(
-      'Login Error',
-      error.message || 'Failed to connect to server. Please try again.'
-    );
-  } finally {
-    setLoading(false);
-  }
+  // Use .then/.catch instead of async/await to avoid warnings
+  AuthService.login(email, password)
+    .then((response) => {
+      console.log('📡 Login response:', response);
+      
+      if (response.success) {
+        console.log('✅ Login successful, navigating to Main');
+        navigation.replace('Main');
+      } else {
+        console.log('❌ Login failed:', response.message);
+        Alert.alert('Login Failed', response.message || 'Invalid credentials');
+      }
+    })
+    .catch((error) => {
+      console.error('❌ Login error:', error);
+      Alert.alert(
+        'Login Error',
+        error.message || 'Failed to connect to server. Please try again.'
+      );
+    })
+    .finally(() => {
+      setLoading(false);
+    });
 };
 
   // Handle demo login (for testing)

@@ -2,19 +2,25 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-// Your computer's IP address - make sure this is correct!
-const YOUR_IP = '192.168.1.11';
+// Your computer's IP address
+const YOUR_IP = '192.168.1.13';
 const PORT = '5000';
 
 // Determine base URL based on platform
 let BASE_URL;
 
 if (Platform.OS === 'web') {
-  // For web, we need to handle both http and https
-  const protocol = window.location.protocol;
-  BASE_URL = `${protocol}//${YOUR_IP}:${PORT}/api/v1`;
+  // For web, we need to check if window exists
+  if (typeof window !== 'undefined' && window.location) {
+    const protocol = window.location.protocol === 'https:' ? 'https' : 'http';
+    BASE_URL = `${protocol}://${YOUR_IP}:${PORT}/api/v1`;
+    console.log('📡 Web protocol:', protocol);
+  } else {
+    // Fallback for web if window is not available
+    BASE_URL = `http://${YOUR_IP}:${PORT}/api/v1`;
+  }
 } else {
-  // For mobile (iOS/Android), use http
+  // For mobile (iOS/Android), always use http
   BASE_URL = `http://${YOUR_IP}:${PORT}/api/v1`;
 }
 
@@ -55,10 +61,12 @@ api.interceptors.request.use(
 // Response interceptor for error handling
 api.interceptors.response.use(
   (response) => {
-    console.log('📥 Response:', response.status, response.config.url);
+    console.log('📥 Response:', response.status);
     return response.data;
   },
   async (error) => {
+    console.error('❌ API Error:', error.message);
+    
     if (error.code === 'ECONNABORTED') {
       console.error('❌ Request timeout');
       return Promise.reject({ message: 'Request timeout - server too slow' });
@@ -72,7 +80,12 @@ api.interceptors.response.use(
     } else if (error.request) {
       // The request was made but no response was received
       console.error('❌ No response received - is the server running?');
-      return Promise.reject({ message: 'Cannot connect to server. Please check if backend is running.' });
+      return Promise.reject({ 
+        message: 'Cannot connect to server. Make sure:\n' +
+                '1. Backend is running (npm start in backend folder)\n' +
+                '2. Phone and computer are on same WiFi\n' +
+                '3. IP address is correct: ' + YOUR_IP
+      });
     } else {
       // Something happened in setting up the request
       console.error('❌ Request setup error:', error.message);
