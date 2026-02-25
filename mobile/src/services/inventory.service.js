@@ -47,19 +47,22 @@ const InventoryService = {
   },
 
   // Update product
-  updateProduct: async (id, productData) => {
-    try {
-      console.log('📦 API Call - updateProduct ID:', id);
-      console.log('📦 API Call - updateProduct data:', productData);
-      const response = await api.put(`/products/${id}`, productData);
-      console.log('📦 API Response - updateProduct:', response);
-      return response;
-    } catch (error) {
-      console.error('❌ Error updating product:', error);
-      console.error('❌ Error response:', error.response?.data);
-      throw error;
-    }
-  },
+  // Update product
+updateProduct: async (id, productData) => {
+  try {
+    console.log('📦 API Call - updateProduct ID:', id);
+    console.log('📦 API Call - updateProduct data:', productData);
+    
+    const response = await api.put(`/products/${id}`, productData);
+    
+    console.log('📦 API Response - updateProduct:', response);
+    return response;
+  } catch (error) {
+    console.error('❌ Error updating product:', error);
+    console.error('❌ Error response:', error.response?.data);
+    throw error;
+  }
+},
 
   // Delete product
   deleteProduct: async (id) => {
