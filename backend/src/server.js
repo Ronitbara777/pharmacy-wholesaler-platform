@@ -5,7 +5,6 @@ const morgan = require('morgan');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
-const activityRoutes = require('./routes/activity.routes');
 
 // Load environment variables
 dotenv.config();

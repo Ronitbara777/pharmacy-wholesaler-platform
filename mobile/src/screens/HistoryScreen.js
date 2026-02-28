@@ -1,3 +1,5 @@
+// Add this at the top with other imports
+import * as FileSystem from 'expo-file-system/legacy';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -6,7 +8,6 @@ import {
   RefreshControl,
   TouchableOpacity,
   Alert,
-  Share,
   Platform
 } from 'react-native';
 import {
@@ -24,14 +25,18 @@ import {
   Portal,
   Dialog,
   RadioButton,
-  DataTable,
   Snackbar
 } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import HistoryService from '../services/history.service';
+// Remove the direct import of expo-file-system and use require in the function
+
+////
+import { File, Directory, Paths } from 'expo-file-system';
+// Add this line for encoding
+const { EncodingType } = FileSystem;
 
 console.log('📋 HistoryScreen loaded');
 
@@ -211,49 +216,106 @@ export default function HistoryScreen({ navigation }) {
   };
 
   const handleExport = async (format) => {
-    try {
-      setExporting(true);
-      setExportMenuVisible(false);
+  try {
+    setExporting(true);
+    setExportMenuVisible(false);
 
-      const params = {};
-      if (selectedAction !== 'all') params.action = selectedAction;
-      if (selectedDateRange === 'custom' && startDate && endDate) {
-        params.startDate = startDate.toISOString();
-        params.endDate = endDate.toISOString();
+    // Build filter params
+    const params = {};
+    if (selectedAction !== 'all') params.action = selectedAction;
+    
+    // Add date filters
+    if (selectedDateRange === 'custom' && startDate && endDate) {
+      params.startDate = startDate.toISOString().split('T')[0];
+      params.endDate = endDate.toISOString().split('T')[0];
+    } else if (selectedDateRange !== 'week' && selectedDateRange !== 'all') {
+      const now = new Date();
+      const start = new Date();
+      
+      switch(selectedDateRange) {
+        case 'today':
+          start.setHours(0, 0, 0, 0);
+          params.startDate = start.toISOString().split('T')[0];
+          params.endDate = now.toISOString().split('T')[0];
+          break;
+        case 'yesterday':
+          start.setDate(start.getDate() - 1);
+          start.setHours(0, 0, 0, 0);
+          const end = new Date(start);
+          end.setHours(23, 59, 59, 999);
+          params.startDate = start.toISOString().split('T')[0];
+          params.endDate = end.toISOString().split('T')[0];
+          break;
+        case 'month':
+          start.setMonth(start.getMonth() - 1);
+          params.startDate = start.toISOString().split('T')[0];
+          params.endDate = now.toISOString().split('T')[0];
+          break;
       }
-
-      let response;
-      if (format === 'pdf') {
-        response = await HistoryService.exportToPDF(params);
-      } else {
-        response = await HistoryService.exportToCSV(params);
-      }
-
-      // For web, trigger download
-      if (Platform.OS === 'web') {
-        const url = window.URL.createObjectURL(new Blob([response]));
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', `history.${format}`);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-      } else {
-        // For mobile, share the file
-        const fileUri = FileSystem.documentDirectory + `history.${format}`;
-        await FileSystem.writeAsStringAsync(fileUri, response);
-        await Sharing.shareAsync(fileUri);
-      }
-
-      showSnackbar(`Exported as ${format.toUpperCase()}`);
-
-    } catch (error) {
-      console.error('Export error:', error);
-      Alert.alert('Error', `Failed to export as ${format.toUpperCase()}`);
-    } finally {
-      setExporting(false);
     }
-  };
+
+    console.log('📋 Export params:', params);
+
+    let response;
+    if (format === 'pdf') {
+      response = await HistoryService.exportToPDF(params);
+    } else {
+      response = await HistoryService.exportToCSV(params);
+    }
+
+    console.log('📋 Export response received, type:', typeof response);
+    
+    // Handle the response based on platform
+    if (Platform.OS === 'web') {
+      // For web, create a download link
+      const blob = new Blob([response], { 
+        type: format === 'pdf' ? 'application/pdf' : 'text/csv' 
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `history_export.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      showSnackbar(`Downloaded as ${format.toUpperCase()}`);
+    } else {
+      // For mobile, use the legacy API for now (simpler)
+      const FileSystem = require('expo-file-system/legacy');
+      const fileUri = FileSystem.documentDirectory + `history_export.${format}`;
+      console.log('📋 Saving to:', fileUri);
+      
+      await FileSystem.writeAsStringAsync(fileUri, response, {
+        encoding: FileSystem.EncodingType.UTF8
+      });
+      
+      const fileInfo = await FileSystem.getInfoAsync(fileUri);
+      
+      if (fileInfo.exists) {
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: format === 'pdf' ? 'application/pdf' : 'text/csv',
+            dialogTitle: `Export as ${format.toUpperCase()}`,
+            UTI: format === 'pdf' ? 'com.adobe.pdf' : 'public.comma-separated-values-text'
+          });
+          showSnackbar(`Exported as ${format.toUpperCase()}`);
+        } else {
+          showSnackbar(`File saved to: ${fileUri}`);
+        }
+      } else {
+        Alert.alert('Error', 'Failed to save file');
+      }
+    }
+
+  } catch (error) {
+    console.error('❌ Export error:', error);
+    console.error('❌ Error details:', error.message);
+    Alert.alert('Error', `Failed to export as ${format.toUpperCase()}: ${error.message}`);
+  } finally {
+    setExporting(false);
+  }
+};
 
   const showSnackbar = (message) => {
     setSnackbarMessage(message);

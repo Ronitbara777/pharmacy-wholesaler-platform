@@ -1,6 +1,7 @@
 const prisma = require('../config/prisma');
 
 // Get all activities with filters
+// Get all activities with filters
 const getActivities = async (req, res) => {
   try {
     const {
@@ -14,29 +15,53 @@ const getActivities = async (req, res) => {
       search
     } = req.query;
 
+    console.log('📋 Activity filters received:', { page, limit, startDate, endDate, action, search });
+
     // Build filter conditions
     const where = {};
 
+    // Date range filter
     if (startDate || endDate) {
       where.createdAt = {};
-      if (startDate) where.createdAt.gte = new Date(startDate);
-      if (endDate) where.createdAt.lte = new Date(endDate);
+      if (startDate) {
+        where.createdAt.gte = new Date(startDate);
+        console.log('📋 Start date:', new Date(startDate));
+      }
+      if (endDate) {
+        where.createdAt.lte = new Date(endDate);
+        console.log('📋 End date:', new Date(endDate));
+      }
     }
 
-    if (action) where.action = action;
-    if (userId) where.userId = userId;
-    if (entityType) where.entityType = entityType;
+    // Action filter
+    if (action && action !== 'all' && action !== 'undefined') {
+      where.action = action;
+      console.log('📋 Action filter:', action);
+    }
 
-    if (search) {
+    // User filter
+    if (userId) {
+      where.userId = userId;
+    }
+
+    // Entity type filter
+    if (entityType) {
+      where.entityType = entityType;
+    }
+
+    // Search filter
+    if (search && search.trim() !== '') {
       where.OR = [
         { details: { contains: search, mode: 'insensitive' } },
         { entityType: { contains: search, mode: 'insensitive' } },
         { action: { contains: search, mode: 'insensitive' } }
       ];
+      console.log('📋 Search filter:', search);
     }
 
     // Get total count for pagination
     const total = await prisma.activity.count({ where });
+    console.log('📋 Total matching activities:', total);
 
     // Get activities
     const activities = await prisma.activity.findMany({
@@ -61,6 +86,8 @@ const getActivities = async (req, res) => {
       skip: (parseInt(page) - 1) * parseInt(limit),
       take: parseInt(limit)
     });
+
+    console.log(`📋 Returning ${activities.length} activities`);
 
     res.json({
       success: true,
@@ -220,19 +247,25 @@ const getActivityStats = async (req, res) => {
 };
 
 // Export activities to CSV
+// Export activities to CSV
 const exportToCSV = async (req, res) => {
   try {
-    const { startDate, endDate, action, userId } = req.query;
+    const { startDate, endDate, action } = req.query;
+    
+    console.log('📋 Exporting CSV with filters:', { startDate, endDate, action });
 
     // Build filter conditions
     const where = {};
+    
     if (startDate || endDate) {
       where.createdAt = {};
       if (startDate) where.createdAt.gte = new Date(startDate);
       if (endDate) where.createdAt.lte = new Date(endDate);
     }
-    if (action) where.action = action;
-    if (userId) where.userId = userId;
+    
+    if (action && action !== 'all') {
+      where.action = action;
+    }
 
     const activities = await prisma.activity.findMany({
       where,
@@ -243,27 +276,13 @@ const exportToCSV = async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    // Create CSV content
-    const csvRows = [];
-    
-    // Headers
-    csvRows.push([
-      'Timestamp',
-      'Action',
-      'Entity Type',
-      'Entity ID',
-      'User',
-      'User Email',
-      'Product',
-      'Batch Number',
-      'Details',
-      'IP Address',
-      'Device'
-    ].join(','));
+    console.log(`📋 Exporting ${activities.length} activities to CSV`);
 
-    // Data rows
+    // Create CSV content
+    let csv = 'Timestamp,Action,Entity Type,Entity ID,User,User Email,Product,Batch Number,Details,IP Address,Device\n';
+    
     for (const activity of activities) {
-      csvRows.push([
+      const row = [
         activity.createdAt.toISOString(),
         activity.action,
         activity.entityType || '',
@@ -272,16 +291,17 @@ const exportToCSV = async (req, res) => {
         activity.user?.email || '',
         activity.product?.name || '',
         activity.product?.batchNumber || '',
-        JSON.stringify(activity.details || {}),
+        JSON.stringify(activity.details || {}).replace(/,/g, ';'), // Replace commas to avoid CSV issues
         activity.ipAddress || '',
         activity.device || ''
-      ].map(field => `"${field}"`).join(','));
+      ].map(field => `"${field}"`).join(',');
+      
+      csv += row + '\n';
     }
-
-    const csv = csvRows.join('\n');
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename=activities-${Date.now()}.csv`);
+    res.setHeader('Content-Length', Buffer.byteLength(csv));
     res.send(csv);
 
   } catch (error) {
@@ -290,16 +310,35 @@ const exportToCSV = async (req, res) => {
   }
 };
 
-// Export activities to PDF (simplified - you might want to use a PDF library)
+// Export activities to PDF (simplified HTML version)
 const exportToPDF = async (req, res) => {
   try {
+    const { startDate, endDate, action } = req.query;
+    
+    console.log('📋 Exporting PDF with filters:', { startDate, endDate, action });
+
+    // Build filter conditions
+    const where = {};
+    
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = new Date(startDate);
+      if (endDate) where.createdAt.lte = new Date(endDate);
+    }
+    
+    if (action && action !== 'all') {
+      where.action = action;
+    }
+
     const activities = await prisma.activity.findMany({
+      where,
       include: {
-        user: { select: { name: true } }
+        user: { select: { name: true, email: true } }
       },
-      orderBy: { createdAt: 'desc' },
-      take: 1000
+      orderBy: { createdAt: 'desc' }
     });
+
+    console.log(`📋 Exporting ${activities.length} activities to PDF`);
 
     // Create HTML for PDF
     const html = `
@@ -308,18 +347,26 @@ const exportToPDF = async (req, res) => {
         <head>
           <title>Activity History</title>
           <style>
-            body { font-family: Arial; padding: 20px; }
+            body { font-family: Arial, sans-serif; margin: 20px; }
             h1 { color: #007AFF; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th { background: #007AFF; color: white; padding: 10px; text-align: left; }
-            td { padding: 8px; border-bottom: 1px solid #ddd; }
-            .timestamp { font-size: 12px; color: #666; }
+            .header { display: flex; justify-content: space-between; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+            th { background: #007AFF; color: white; padding: 8px; text-align: left; }
+            td { padding: 6px; border-bottom: 1px solid #ddd; }
+            tr:nth-child(even) { background: #f9f9f9; }
+            .timestamp { color: #666; }
           </style>
         </head>
         <body>
-          <h1>Activity History Report</h1>
-          <p>Generated on: ${new Date().toLocaleString()}</p>
-          <p>Total Activities: ${activities.length}</p>
+          <div class="header">
+            <h1>Activity History Report</h1>
+            <p>Generated: ${new Date().toLocaleString()}</p>
+          </div>
+          
+          <p><strong>Total Activities:</strong> ${activities.length}</p>
+          ${startDate ? `<p><strong>From:</strong> ${new Date(startDate).toLocaleDateString()}</p>` : ''}
+          ${endDate ? `<p><strong>To:</strong> ${new Date(endDate).toLocaleDateString()}</p>` : ''}
+          ${action && action !== 'all' ? `<p><strong>Action:</strong> ${action}</p>` : ''}
           
           <table>
             <thead>
@@ -335,10 +382,10 @@ const exportToPDF = async (req, res) => {
               ${activities.map(a => `
                 <tr>
                   <td class="timestamp">${new Date(a.createdAt).toLocaleString()}</td>
-                  <td>${a.action}</td>
+                  <td><strong>${a.action}</strong></td>
                   <td>${a.entityType || '-'}</td>
                   <td>${a.user?.name || '-'}</td>
-                  <td>${JSON.stringify(a.details || {})}</td>
+                  <td>${JSON.stringify(a.details || {}).substring(0, 50)}${JSON.stringify(a.details || {}).length > 50 ? '...' : ''}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -349,6 +396,7 @@ const exportToPDF = async (req, res) => {
 
     res.setHeader('Content-Type', 'text/html');
     res.setHeader('Content-Disposition', `attachment; filename=activities-${Date.now()}.html`);
+    res.setHeader('Content-Length', Buffer.byteLength(html));
     res.send(html);
 
   } catch (error) {
@@ -356,6 +404,7 @@ const exportToPDF = async (req, res) => {
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };
+
 
 module.exports = {
   getActivities,
