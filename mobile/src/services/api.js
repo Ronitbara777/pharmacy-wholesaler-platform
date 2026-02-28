@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
 // Your computer's IP address
-const YOUR_IP = '192.168.1.13';
+const YOUR_IP = '192.168.1.33';
 const PORT = '5000';
 
 // Determine base URL based on platform

@@ -1,35 +1,29 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth.middleware');
+const {
+  getNotifications,
+  getUnreadCount,
+  markAsRead,
+  markAllAsRead,
+  deleteNotification,
+  clearAllNotifications
+} = require('../controllers/notification.controller');
 
+// All routes require authentication
 router.use(authenticate);
 
-// Get user notifications
-router.get('/', async (req, res) => {
-  try {
-    const prisma = require('../config/prisma');
-    const notifications = await prisma.notification.findMany({
-      where: { userId: req.user.id },
-      orderBy: { createdAt: 'desc' }
-    });
-    res.json({ success: true, data: notifications });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
+// Notification routes
+// Notification routes - ORDER MATTERS!
+router.get('/', getNotifications);
+router.get('/unread/count', getUnreadCount);
 
-// Mark as read
-router.patch('/:id/read', async (req, res) => {
-  try {
-    const prisma = require('../config/prisma');
-    const notification = await prisma.notification.update({
-      where: { id: req.params.id },
-      data: { read: true }
-    });
-    res.json({ success: true, data: notification });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
+// Specific actions first (these are not IDs)
+router.delete('/clear-all', clearAllNotifications);  // This must come BEFORE /:id
+router.post('/mark-all-read', markAllAsRead);
+
+// Parameterized routes last
+router.patch('/:id/read', markAsRead);
+router.delete('/:id', deleteNotification);
 
 module.exports = router;

@@ -215,7 +215,7 @@ export default function DashboardScreen({ navigation }) {
       <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>
-            Good {new Date().getHours() < 12 ? 'Morning' : 'Afternoon'}, {user?.name?.split(' ')[0] || 'User'}! 👋
+            Good {new Date().getHours() < 12 ? 'Morning' : 'Afternoon'}!
           </Text>
           <Text style={styles.date}>{new Date().toLocaleDateString('en-US', { 
             weekday: 'long', 
@@ -239,7 +239,7 @@ export default function DashboardScreen({ navigation }) {
           />
         </View>
       </View>
-
+          
       {/* Logout Confirmation Dialog */}
       <Portal>
         <Dialog visible={logoutDialogVisible} onDismiss={() => setLogoutDialogVisible(false)}>

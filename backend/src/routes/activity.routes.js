@@ -1,6 +1,25 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate, authorize } = require('../middleware/auth.middleware');
+const {
+  getActivities,
+  getActivityById,
+  getActivityStats,
+  exportToCSV,
+  exportToPDF
+} = require('../controllers/activity.controller');
+
+// All routes require authentication
+router.use(authenticate);
+
+// Activity routes
+router.get('/', getActivities);
+router.get('/stats', getActivityStats);
+router.get('/export/csv', exportToCSV);
+router.get('/export/pdf', exportToPDF);
+router.get('/:id', getActivityById);
+
+module.exports = router;
 
 router.use(authenticate);
 
