@@ -5,862 +5,643 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  Modal,
-  FlatList,
-  ActivityIndicator,
-  Dimensions,
+  RefreshControl,
+  Platform
 } from 'react-native';
 import {
   Card,
   Title,
-  Paragraph,
-  Button,
   Text,
-  TextInput,
+  Button,
   Chip,
-  Divider,
-  RadioButton,
   IconButton,
+  Divider,
+  ActivityIndicator,
   Portal,
   Dialog,
+  TextInput,
   Snackbar,
-  ProgressBar,
-  Avatar,
-  List,
-  Switch,
-  useTheme,
+  Menu
 } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
-import Papa from 'papaparse';
-import { Camera, CameraType } from 'expo-camera';
-import DateTimePicker from 'react-native-modal-datetime-picker';
+import { Camera } from 'expo-camera';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import MovementService from '../services/movement.service';
 
 console.log('📥 InputOutputScreen loaded');
-
-// Mock data for temporary database (will be replaced with actual DB)
-const mockTempDB = {
-  pendingItems: [
-    { 
-      id: 'temp1', 
-      name: 'Paracetamol 500mg', 
-      batch: 'B2024-001', 
-      expiry: '2024-12-15', 
-      quantity: 500, 
-      price: 2.5,
-      mrp: 3.0,
-      company: 'GSK',
-      category: 'Analgesic',
-      warehouse: 'Main',
-      shelf: 'A-12',
-      status: 'pending',
-      source: 'csv',
-      importedAt: '2024-02-22T10:30:00Z'
-    },
-    { 
-      id: 'temp2', 
-      name: 'Amoxicillin 250mg', 
-      batch: 'B2024-002', 
-      expiry: '2024-11-30', 
-      quantity: 300, 
-      price: 5.0,
-      mrp: 6.5,
-      company: 'Cipla',
-      category: 'Antibiotic',
-      warehouse: 'Main',
-      shelf: 'B-05',
-      status: 'pending',
-      source: 'scan',
-      importedAt: '2024-02-22T09:15:00Z'
-    },
-  ],
-  processedItems: [
-    { 
-      id: 'proc1', 
-      name: 'Vitamin C 1000mg', 
-      batch: 'B2024-003', 
-      expiry: '2024-10-20', 
-      quantity: 150, 
-      price: 8.0,
-      mrp: 9.5,
-      company: 'Sun Pharma',
-      category: 'Vitamin',
-      warehouse: 'Cold Storage',
-      shelf: 'C-08',
-      status: 'processed',
-      source: 'manual',
-      processedAt: '2024-02-21T14:30:00Z'
-    },
-  ]
-};
-
-// Mock warehouses
-const warehouses = [
-  { id: 'wh1', name: 'Main Warehouse', sections: ['A', 'B', 'C', 'D'] },
-  { id: 'wh2', name: 'Cold Storage', sections: ['COLD-1', 'COLD-2'] },
-  { id: 'wh3', name: 'Bulk Storage', sections: ['BULK-A', 'BULK-B'] },
-];
 
 export default function InputOutputScreen({ navigation }) {
   console.log('📥 InputOutputScreen rendering');
   
-  const [mode, setMode] = useState('input'); // 'input' or 'output'
-  const [activeTab, setActiveTab] = useState('import'); // 'import', 'scan', 'manual', 'verify'
-  const [tempData, setTempData] = useState(mockTempDB.pendingItems);
-  const [processedData, setProcessedData] = useState(mockTempDB.processedItems);
-  const [selectedItems, setSelectedItems] = useState([]);
+  // State for mode selection
+  const [mode, setMode] = useState('in'); // 'in' or 'out'
+  
+  // State for recent movements
+  const [recentMovements, setRecentMovements] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [scanning, setScanning] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  
+  // State for form
+  const [formVisible, setFormVisible] = useState(false);
+  const [formData, setFormData] = useState({
+    productId: '',
+    quantity: '',
+    party: '',
+    invoiceNo: '',
+    notes: '',
+    price: '',
+    batchNumber: '',
+    expiryDate: ''
+  });
+  
+  // State for products dropdown
+  const [products, setProducts] = useState([]);
+  const [filteredProducts, setFilteredProducts] = useState([]);
+  const [productSearch, setProductSearch] = useState('');
+  const [productMenuVisible, setProductMenuVisible] = useState(false);
+  
+  // State for CSV import
+  const [importing, setImporting] = useState(false);
+  
+  // State for camera
+  const [cameraVisible, setCameraVisible] = useState(false);
   const [cameraPermission, setCameraPermission] = useState(null);
-  const [scannedText, setScannedText] = useState('');
+  
+  // State for date picker
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [dateField, setDateField] = useState(null);
+  
+  // State for stats
+  const [stats, setStats] = useState({
+    today: { in: 0, out: 0 },
+    week: { in: 0, out: 0 },
+    month: { in: 0, out: 0 },
+    total: { in: 0, out: 0 }
+  });
+  
+  // Snackbar
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
-  
-  // Form state for manual entry
-  const [manualForm, setManualForm] = useState({
-    name: '',
-    batch: '',
-    expiry: '',
-    quantity: '',
-    price: '',
-    mrp: '',
-    company: '',
-    category: '',
-    warehouse: 'Main Warehouse',
-    shelf: '',
-    supplier: '',
-    invoiceNo: '',
-  });
 
-  // Search and filter states
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedWarehouse, setSelectedWarehouse] = useState('all');
-  const [selectedSource, setSelectedSource] = useState('all');
-  const [verifyModalVisible, setVerifyModalVisible] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState(null);
-
-  // Camera setup
+  // Load initial data
   useEffect(() => {
-    (async () => {
-      const { status } = await Camera.requestCameraPermissionsAsync();
-      setCameraPermission(status === 'granted');
-    })();
+    loadInitialData();
+    requestCameraPermission();
   }, []);
 
-  // CSV Import Function
+  // Load data when mode changes
+  useEffect(() => {
+    loadMovements();
+  }, [mode]);
+
+  const loadInitialData = async () => {
+    try {
+      setLoading(true);
+      await Promise.all([
+        loadStats(),
+        loadMovements(),
+        loadProducts()
+      ]);
+    } catch (error) {
+      console.error('Error loading initial data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadStats = async () => {
+    try {
+      const response = await MovementService.getMovementStats();
+      if (response.success) {
+        setStats(response.data);
+      }
+    } catch (error) {
+      console.error('Error loading stats:', error);
+    }
+  };
+
+  const loadMovements = async () => {
+    try {
+      const params = {
+        limit: 10,
+        type: mode === 'in' ? 'STOCK_IN' : 'STOCK_OUT'
+      };
+      const response = await MovementService.getMovements(params);
+      if (response.success) {
+        setRecentMovements(response.data);
+      }
+    } catch (error) {
+      console.error('Error loading movements:', error);
+    }
+  };
+
+  const loadProducts = async () => {
+    try {
+      const response = await MovementService.getProducts();
+      if (response.success) {
+        setProducts(response.data);
+      }
+    } catch (error) {
+      console.error('Error loading products:', error);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([loadStats(), loadMovements()]);
+    setRefreshing(false);
+  };
+
+  const requestCameraPermission = async () => {
+    const { status } = await Camera.requestCameraPermissionsAsync();
+    setCameraPermission(status === 'granted');
+  };
+
+  const handleProductSearch = (text) => {
+    setProductSearch(text);
+    if (text.trim() === '') {
+      setFilteredProducts([]);
+    } else {
+      const filtered = products.filter(p => 
+        p.name.toLowerCase().includes(text.toLowerCase()) ||
+        p.batchNumber.toLowerCase().includes(text.toLowerCase())
+      );
+      setFilteredProducts(filtered);
+    }
+  };
+
+  const selectProduct = (product) => {
+    setFormData({
+      ...formData,
+      productId: product.id,
+      batchNumber: product.batchNumber,
+      price: product.price.toString(),
+      expiryDate: product.expiryDate ? new Date(product.expiryDate).toISOString().split('T')[0] : ''
+    });
+    setProductSearch(product.name);
+    setFilteredProducts([]);
+    setProductMenuVisible(false);
+  };
+
+  const handleDateChange = (event, selectedDate) => {
+    setShowDatePicker(false);
+    if (selectedDate) {
+      setFormData({
+        ...formData,
+        expiryDate: selectedDate.toISOString().split('T')[0]
+      });
+    }
+  };
+
+  const validateForm = () => {
+    if (!formData.productId) {
+      Alert.alert('Error', 'Please select a product');
+      return false;
+    }
+    if (!formData.quantity || parseInt(formData.quantity) <= 0) {
+      Alert.alert('Error', 'Please enter a valid quantity');
+      return false;
+    }
+    if (mode === 'out' && !formData.party) {
+      Alert.alert('Error', 'Please enter party/customer name for sales');
+      return false;
+    }
+    return true;
+  };
+
+  const handleSubmit = async () => {
+    if (!validateForm()) return;
+
+    try {
+      setLoading(true);
+      
+      const movementData = {
+        type: mode === 'in' ? 'STOCK_IN' : 'STOCK_OUT',
+        productId: formData.productId,
+        quantity: parseInt(formData.quantity),
+        party: formData.party,
+        invoiceNo: formData.invoiceNo,
+        notes: formData.notes,
+        price: parseFloat(formData.price) || undefined,
+        batchNumber: formData.batchNumber || undefined,
+        expiryDate: formData.expiryDate || undefined
+      };
+
+      const response = await MovementService.createMovement(movementData);
+      
+      if (response.success) {
+        setFormVisible(false);
+        setFormData({
+          productId: '',
+          quantity: '',
+          party: '',
+          invoiceNo: '',
+          notes: '',
+          price: '',
+          batchNumber: '',
+          expiryDate: ''
+        });
+        setProductSearch('');
+        await Promise.all([loadStats(), loadMovements()]);
+        showSnackbar(`Stock ${mode === 'in' ? 'received' : 'sold'} successfully`);
+      }
+    } catch (error) {
+      console.error('Error creating movement:', error);
+      Alert.alert('Error', error.message || 'Failed to record movement');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCSVImport = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ['text/csv', 'application/vnd.ms-excel'],
-        copyToCacheDirectory: true,
+        type: 'text/csv',
+        copyToCacheDirectory: true
       });
 
       if (!result.canceled && result.assets[0]) {
-        setLoading(true);
-        const file = result.assets[0];
+        setImporting(true);
         
-        // Read file content
-        const fileContent = await FileSystem.readAsStringAsync(file.uri);
-        
-        // Parse CSV
-        Papa.parse(fileContent, {
-          header: true,
-          skipEmptyLines: true,
-          complete: (results) => {
-            // Transform CSV data to product format
-            const importedProducts = results.data.map((row, index) => ({
-              id: `temp-${Date.now()}-${index}`,
-              name: row['Product Name'] || row['name'] || '',
-              batch: row['Batch'] || row['batch'] || '',
-              expiry: row['Expiry'] || row['expiry'] || '',
-              quantity: parseInt(row['Quantity'] || row['qty'] || 0),
-              price: parseFloat(row['Price'] || row['price'] || 0),
-              mrp: parseFloat(row['MRP'] || row['mrp'] || 0),
-              company: row['Company'] || row['company'] || '',
-              category: row['Category'] || row['category'] || '',
-              warehouse: 'Main Warehouse',
-              shelf: row['Shelf'] || row['shelf'] || '',
-              status: 'pending',
-              source: 'csv',
-              importedAt: new Date().toISOString(),
-            }));
-
-            setTempData([...tempData, ...importedProducts]);
-            setLoading(false);
-            setSnackbarMessage(`Imported ${importedProducts.length} products from CSV`);
-            setSnackbarVisible(true);
-          },
-          error: (error) => {
-            console.error('CSV Parse Error:', error);
-            Alert.alert('Error', 'Failed to parse CSV file');
-            setLoading(false);
-          },
+        const formData = new FormData();
+        formData.append('file', {
+          uri: result.assets[0].uri,
+          type: 'text/csv',
+          name: result.assets[0].name
         });
+
+        const response = await MovementService.importCSV(formData);
+        
+        if (response.success) {
+          showSnackbar(response.message);
+          await loadStats();
+          await loadMovements();
+        }
       }
     } catch (error) {
-      console.error('CSV Import Error:', error);
-      Alert.alert('Error', 'Failed to import CSV');
-      setLoading(false);
+      console.error('Error importing CSV:', error);
+      Alert.alert('Error', error.message || 'Failed to import CSV');
+    } finally {
+      setImporting(false);
     }
   };
 
-  // Image Scanning Function
-  const handleScanImage = async () => {
-    try {
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 1,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        setScanning(true);
-        // Here you would integrate with OCR service
-        // For now, we'll simulate OCR with mock data
-        setTimeout(() => {
-          const mockScannedProduct = {
-            id: `temp-${Date.now()}`,
-            name: 'Scanned Product',
-            batch: 'SCAN001',
-            expiry: '2024-12-31',
-            quantity: 100,
-            price: 10.0,
-            mrp: 12.0,
-            company: 'Scanned Company',
-            category: 'General',
-            warehouse: 'Main Warehouse',
-            shelf: 'SCAN-01',
-            status: 'pending',
-            source: 'scan',
-            importedAt: new Date().toISOString(),
-          };
-          
-          setTempData([...tempData, mockScannedProduct]);
-          setScanning(false);
-          setSnackbarMessage('Product scanned successfully');
-          setSnackbarVisible(true);
-        }, 2000);
-      }
-    } catch (error) {
-      console.error('Scan Error:', error);
-      Alert.alert('Error', 'Failed to scan image');
-      setScanning(false);
+  const handleBarcodeScan = async () => {
+    if (cameraPermission) {
+      setCameraVisible(true);
+    } else {
+      Alert.alert('Permission Required', 'Camera permission is needed to scan barcodes');
     }
   };
 
-  // Manual Entry Submit
-  const handleManualSubmit = () => {
-    // Validate form
-    if (!manualForm.name || !manualForm.batch || !manualForm.expiry || !manualForm.quantity) {
-      Alert.alert('Error', 'Please fill all required fields');
-      return;
-    }
-
-    const newProduct = {
-      id: `temp-${Date.now()}`,
-      ...manualForm,
-      quantity: parseInt(manualForm.quantity),
-      price: parseFloat(manualForm.price) || 0,
-      mrp: parseFloat(manualForm.mrp) || 0,
-      status: 'pending',
-      source: 'manual',
-      importedAt: new Date().toISOString(),
-    };
-
-    setTempData([...tempData, newProduct]);
-    setManualForm({
-      name: '',
-      batch: '',
-      expiry: '',
-      quantity: '',
-      price: '',
-      mrp: '',
-      company: '',
-      category: '',
-      warehouse: 'Main Warehouse',
-      shelf: '',
-      supplier: '',
-      invoiceNo: '',
-    });
-    
-    setSnackbarMessage('Product added manually');
+  const showSnackbar = (message) => {
+    setSnackbarMessage(message);
     setSnackbarVisible(true);
   };
 
-  // Verify and move to structured DB
-  const handleVerifyAndSave = async (items) => {
-    setLoading(true);
-    
-    try {
-      // Simulate API call to save to structured DB
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Move items from temp to processed
-      const itemsToProcess = items.length > 0 ? items : selectedItems;
-      
-      const processed = itemsToProcess.map(item => ({
-        ...item,
-        status: 'processed',
-        processedAt: new Date().toISOString(),
-      }));
-      
-      setProcessedData([...processedData, ...processed]);
-      setTempData(tempData.filter(item => !itemsToProcess.find(i => i.id === item.id)));
-      setSelectedItems([]);
-      
-      setSnackbarMessage(`Successfully saved ${itemsToProcess.length} products`);
-      setSnackbarVisible(true);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to save products');
-    } finally {
-      setLoading(false);
-      setVerifyModalVisible(false);
-    }
+  const formatDateTime = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleString();
   };
 
-  // Handle output (selling)
-  const handleSellProduct = (product) => {
-    Alert.alert(
-      'Sell Product',
-      `Enter quantity to sell for ${product.name}`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sell',
-          onPress: () => {
-            // Here you would process the sale
-            Alert.alert('Success', 'Sale recorded');
-          }
-        }
-      ]
-    );
-  };
-
-  // Filter temp data
-  const getFilteredTempData = () => {
-    let filtered = [...tempData];
-    
-    if (searchQuery) {
-      filtered = filtered.filter(item => 
-        item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.batch.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.company.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-    
-    if (selectedWarehouse !== 'all') {
-      filtered = filtered.filter(item => item.warehouse === selectedWarehouse);
-    }
-    
-    if (selectedSource !== 'all') {
-      filtered = filtered.filter(item => item.source === selectedSource);
-    }
-    
-    return filtered;
-  };
-
-  // Render import tab
-  const renderImportTab = () => (
-    <View style={styles.tabContent}>
-      {/* Import Options */}
-      <View style={styles.importOptions}>
-        <Card style={styles.importCard} onPress={handleCSVImport}>
-          <Card.Content style={styles.importCardContent}>
-            <Ionicons name="document-text" size={40} color="#007AFF" />
-            <Text style={styles.importCardTitle}>CSV Import</Text>
-            <Text style={styles.importCardDesc}>Upload CSV file with product data</Text>
-          </Card.Content>
-        </Card>
-
-        <Card style={styles.importCard} onPress={handleScanImage}>
-          <Card.Content style={styles.importCardContent}>
-            <Ionicons name="camera" size={40} color="#4CAF50" />
-            <Text style={styles.importCardTitle}>Scan Image</Text>
-            <Text style={styles.importCardDesc}>Scan invoice or product label</Text>
-          </Card.Content>
-        </Card>
-
-        <Card style={styles.importCard} onPress={() => setActiveTab('manual')}>
-          <Card.Content style={styles.importCardContent}>
-            <Ionicons name="create" size={40} color="#FF9800" />
-            <Text style={styles.importCardTitle}>Manual Entry</Text>
-            <Text style={styles.importCardDesc}>Enter product details manually</Text>
-          </Card.Content>
-        </Card>
+  if (loading && !refreshing) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={styles.loadingText}>Loading...</Text>
       </View>
-
-      {/* Pending Items */}
-      <Card style={styles.pendingCard}>
-        <Card.Content>
-          <View style={styles.sectionHeader}>
-            <Title>Pending Verification</Title>
-            <Chip icon="clock-outline">{tempData.length} items</Chip>
-          </View>
-
-          {tempData.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="cube-outline" size={48} color="#ccc" />
-              <Text style={styles.emptyText}>No pending items</Text>
-            </View>
-          ) : (
-            <>
-              {/* Filters */}
-              <View style={styles.filterContainer}>
-                <TextInput
-                  placeholder="Search pending items..."
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  mode="outlined"
-                  dense
-                  style={styles.searchInput}
-                />
-                
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <Chip
-                    selected={selectedWarehouse === 'all'}
-                    onPress={() => setSelectedWarehouse('all')}
-                    style={styles.filterChip}
-                  >
-                    All Warehouses
-                  </Chip>
-                  {warehouses.map(w => (
-                    <Chip
-                      key={w.id}
-                      selected={selectedWarehouse === w.name}
-                      onPress={() => setSelectedWarehouse(w.name)}
-                      style={styles.filterChip}
-                    >
-                      {w.name}
-                    </Chip>
-                  ))}
-                </ScrollView>
-              </View>
-
-              {/* Pending Items List */}
-              {getFilteredTempData().map(item => (
-                <Card key={item.id} style={styles.pendingItemCard}>
-                  <Card.Content>
-                    <View style={styles.pendingItemHeader}>
-                      <View style={styles.pendingItemTitle}>
-                        <Text style={styles.pendingItemName}>{item.name}</Text>
-                        <Chip 
-                          icon={item.source === 'csv' ? 'file-document' : 
-                                item.source === 'scan' ? 'camera' : 'pencil'}
-                          mode="outlined"
-                          style={styles.sourceChip}
-                        >
-                          {item.source}
-                        </Chip>
-                      </View>
-                      <IconButton
-                        icon="checkbox-blank-outline"
-                        size={24}
-                        onPress={() => {
-                          if (selectedItems.includes(item)) {
-                            setSelectedItems(selectedItems.filter(i => i.id !== item.id));
-                          } else {
-                            setSelectedItems([...selectedItems, item]);
-                          }
-                        }}
-                      />
-                    </View>
-
-                    <View style={styles.pendingItemDetails}>
-                      <View style={styles.detailRow}>
-                        <Ionicons name="cube-outline" size={16} color="#666" />
-                        <Text style={styles.detailText}>Batch: {item.batch}</Text>
-                      </View>
-                      <View style={styles.detailRow}>
-                        <Ionicons name="calendar-outline" size={16} color="#666" />
-                        <Text style={styles.detailText}>Expiry: {new Date(item.expiry).toLocaleDateString()}</Text>
-                      </View>
-                      <View style={styles.detailRow}>
-                        <Ionicons name="business-outline" size={16} color="#666" />
-                        <Text style={styles.detailText}>{item.company}</Text>
-                      </View>
-                    </View>
-
-                    <Divider style={styles.divider} />
-
-                    <View style={styles.pendingItemFooter}>
-                      <View>
-                        <Text style={styles.footerLabel}>Quantity</Text>
-                        <Text style={styles.footerValue}>{item.quantity}</Text>
-                      </View>
-                      <View>
-                        <Text style={styles.footerLabel}>Price</Text>
-                        <Text style={styles.footerValue}>₹{item.price}</Text>
-                      </View>
-                      <View style={styles.footerActions}>
-                        <Button 
-                          mode="text" 
-                          onPress={() => {
-                            setSelectedProduct(item);
-                            setVerifyModalVisible(true);
-                          }}
-                        >
-                          Verify
-                        </Button>
-                      </View>
-                    </View>
-                  </Card.Content>
-                </Card>
-              ))}
-
-              {selectedItems.length > 0 && (
-                <View style={styles.bulkActions}>
-                  <Button 
-                    mode="contained" 
-                    onPress={() => handleVerifyAndSave(selectedItems)}
-                    loading={loading}
-                  >
-                    Save Selected ({selectedItems.length})
-                  </Button>
-                  <Button 
-                    mode="outlined" 
-                    onPress={() => setSelectedItems([])}
-                  >
-                    Clear
-                  </Button>
-                </View>
-              )}
-            </>
-          )}
-        </Card.Content>
-      </Card>
-    </View>
-  );
-
-  // Render manual entry tab
-  const renderManualTab = () => (
-    <ScrollView style={styles.tabContent}>
-      <Card style={styles.formCard}>
-        <Card.Content>
-          <Title>Manual Product Entry</Title>
-          <Paragraph>Enter product details manually</Paragraph>
-
-          <TextInput
-            label="Product Name *"
-            value={manualForm.name}
-            onChangeText={text => setManualForm({...manualForm, name: text})}
-            mode="outlined"
-            style={styles.formInput}
-          />
-
-          <TextInput
-            label="Batch Number *"
-            value={manualForm.batch}
-            onChangeText={text => setManualForm({...manualForm, batch: text})}
-            mode="outlined"
-            style={styles.formInput}
-          />
-
-          <TouchableOpacity onPress={() => {
-            setDateField('expiry');
-            setShowDatePicker(true);
-          }}>
-            <TextInput
-              label="Expiry Date *"
-              value={manualForm.expiry}
-              editable={false}
-              mode="outlined"
-              style={styles.formInput}
-              right={<TextInput.Icon icon="calendar" />}
-            />
-          </TouchableOpacity>
-
-          <View style={styles.formRow}>
-            <TextInput
-              label="Quantity *"
-              value={manualForm.quantity}
-              onChangeText={text => setManualForm({...manualForm, quantity: text})}
-              mode="outlined"
-              keyboardType="numeric"
-              style={[styles.formInput, styles.halfInput]}
-            />
-            <TextInput
-              label="Price (₹)"
-              value={manualForm.price}
-              onChangeText={text => setManualForm({...manualForm, price: text})}
-              mode="outlined"
-              keyboardType="numeric"
-              style={[styles.formInput, styles.halfInput]}
-            />
-          </View>
-
-          <TextInput
-            label="Company"
-            value={manualForm.company}
-            onChangeText={text => setManualForm({...manualForm, company: text})}
-            mode="outlined"
-            style={styles.formInput}
-          />
-
-          <TextInput
-            label="Category"
-            value={manualForm.category}
-            onChangeText={text => setManualForm({...manualForm, category: text})}
-            mode="outlined"
-            style={styles.formInput}
-          />
-
-          <TextInput
-            label="Shelf Location"
-            value={manualForm.shelf}
-            onChangeText={text => setManualForm({...manualForm, shelf: text})}
-            mode="outlined"
-            style={styles.formInput}
-          />
-
-          <TextInput
-            label="Supplier"
-            value={manualForm.supplier}
-            onChangeText={text => setManualForm({...manualForm, supplier: text})}
-            mode="outlined"
-            style={styles.formInput}
-          />
-
-          <TextInput
-            label="Invoice Number"
-            value={manualForm.invoiceNo}
-            onChangeText={text => setManualForm({...manualForm, invoiceNo: text})}
-            mode="outlined"
-            style={styles.formInput}
-          />
-
-          <Button 
-            mode="contained" 
-            onPress={handleManualSubmit}
-            style={styles.submitButton}
-            icon="check"
-          >
-            Add Product
-          </Button>
-        </Card.Content>
-      </Card>
-    </ScrollView>
-  );
-
-  // Render output (selling) tab
-  const renderOutputTab = () => (
-    <View style={styles.tabContent}>
-      <Card style={styles.outputCard}>
-        <Card.Content>
-          <Title>Sell Products</Title>
-          <Paragraph>Search and select products to sell</Paragraph>
-
-          <TextInput
-            placeholder="Search products by name, batch..."
-            mode="outlined"
-            style={styles.searchInput}
-          />
-
-          {/* Quick search results would go here */}
-          <List.Item
-            title="Paracetamol 500mg"
-            description="Batch: B2024-001 • Qty: 500 • ₹2.5"
-            left={props => <List.Icon {...props} icon="pill" />}
-            right={props => (
-              <Button mode="contained" onPress={() => {}}>Sell</Button>
-            )}
-          />
-        </Card.Content>
-      </Card>
-    </View>
-  );
+    );
+  }
 
   return (
     <View style={styles.container}>
-      {/* Mode Selector (Input/Output) */}
-      <View style={styles.modeSelector}>
-        <TouchableOpacity
-          style={[styles.modeButton, mode === 'input' && styles.modeButtonActive]}
-          onPress={() => setMode('input')}
-        >
-          <Ionicons 
-            name="arrow-down-circle" 
-            size={24} 
-            color={mode === 'input' ? '#007AFF' : '#666'} 
-          />
-          <Text style={[styles.modeText, mode === 'input' && styles.modeTextActive]}>
-            Input
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.modeButton, mode === 'output' && styles.modeButtonActive]}
-          onPress={() => setMode('output')}
-        >
-          <Ionicons 
-            name="arrow-up-circle" 
-            size={24} 
-            color={mode === 'output' ? '#007AFF' : '#666'} 
-          />
-          <Text style={[styles.modeText, mode === 'output' && styles.modeTextActive]}>
-            Output
-          </Text>
-        </TouchableOpacity>
+      {/* Header with Mode Selector */}
+      <View style={styles.header}>
+        <View style={styles.modeSelector}>
+          <TouchableOpacity
+            style={[styles.modeButton, mode === 'in' && styles.modeButtonActive]}
+            onPress={() => setMode('in')}
+          >
+            <Ionicons 
+              name="arrow-down-circle" 
+              size={24} 
+              color={mode === 'in' ? '#007AFF' : '#666'} 
+            />
+            <Text style={[styles.modeText, mode === 'in' && styles.modeTextActive]}>
+              STOCK IN
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.modeButton, mode === 'out' && styles.modeButtonActive]}
+            onPress={() => setMode('out')}
+          >
+            <Ionicons 
+              name="arrow-up-circle" 
+              size={24} 
+              color={mode === 'out' ? '#007AFF' : '#666'} 
+            />
+            <Text style={[styles.modeText, mode === 'out' && styles.modeTextActive]}>
+              STOCK OUT
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {mode === 'input' ? (
-        <>
-          {/* Input Tabs */}
-          <View style={styles.inputTabs}>
-            <TouchableOpacity
-              style={[styles.tab, activeTab === 'import' && styles.activeTab]}
-              onPress={() => setActiveTab('import')}
-            >
-              <Text style={[styles.tabText, activeTab === 'import' && styles.activeTabText]}>
-                Import
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tab, activeTab === 'scan' && styles.activeTab]}
-              onPress={() => setActiveTab('scan')}
-            >
-              <Text style={[styles.tabText, activeTab === 'scan' && styles.activeTabText]}>
-                Scan
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tab, activeTab === 'manual' && styles.activeTab]}
-              onPress={() => setActiveTab('manual')}
-            >
-              <Text style={[styles.tabText, activeTab === 'manual' && styles.activeTabText]}>
-                Manual
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Tab Content */}
-          {activeTab === 'import' && renderImportTab()}
-          {activeTab === 'scan' && (
-            <View style={styles.scanContainer}>
-              {cameraPermission ? (
-                <View style={styles.cameraPlaceholder}>
-                  <Ionicons name="camera" size={64} color="#ccc" />
-                  <Text>Camera would open here</Text>
-                  <Button 
-                    mode="contained" 
-                    onPress={handleScanImage}
-                    style={styles.scanButton}
-                  >
-                    Take Photo
-                  </Button>
-                </View>
-              ) : (
-                <Text>No camera permission</Text>
-              )}
-            </View>
-          )}
-          {activeTab === 'manual' && renderManualTab()}
-        </>
-      ) : (
-        // Output Mode
-        renderOutputTab()
-      )}
-
-      {/* Verification Modal */}
-      <Portal>
-        <Modal
-          visible={verifyModalVisible}
-          onDismiss={() => setVerifyModalVisible(false)}
-          contentContainerStyle={styles.modalContainer}
+      {/* Compact Stats Cards - FIXED UI */}
+      <View style={styles.compactStatsContainer}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.compactStatsContent}
         >
-          {selectedProduct && (
-            <ScrollView>
-              <View style={styles.modalHeader}>
-                <Title>Verify Product</Title>
-                <IconButton icon="close" onPress={() => setVerifyModalVisible(false)} />
-              </View>
+          <View style={styles.compactStatItem}>
+            <Text style={[styles.compactStatValue, { color: mode === 'in' ? '#4CAF50' : '#F44336' }]}>
+              {mode === 'in' ? stats.today.in : stats.today.out}
+            </Text>
+            <Text style={styles.compactStatLabel}>Today</Text>
+          </View>
+          
+          <View style={styles.compactStatDivider} />
+          
+          <View style={styles.compactStatItem}>
+            <Text style={[styles.compactStatValue, { color: mode === 'in' ? '#4CAF50' : '#F44336' }]}>
+              {mode === 'in' ? stats.week.in : stats.week.out}
+            </Text>
+            <Text style={styles.compactStatLabel}>Week</Text>
+          </View>
+          
+          <View style={styles.compactStatDivider} />
+          
+          <View style={styles.compactStatItem}>
+            <Text style={[styles.compactStatValue, { color: mode === 'in' ? '#4CAF50' : '#F44336' }]}>
+              {mode === 'in' ? stats.month.in : stats.month.out}
+            </Text>
+            <Text style={styles.compactStatLabel}>Month</Text>
+          </View>
+          
+          <View style={styles.compactStatDivider} />
+          
+          <View style={styles.compactStatItem}>
+            <Text style={[styles.compactStatValue, { color: mode === 'in' ? '#4CAF50' : '#F44336' }]}>
+              {mode === 'in' ? stats.total.in : stats.total.out}
+            </Text>
+            <Text style={styles.compactStatLabel}>Total</Text>
+          </View>
+        </ScrollView>
+      </View>
 
-              <Divider />
+      {/* Action Buttons */}
+      <View style={styles.actionButtons}>
+        <Button
+          mode="contained"
+          onPress={() => setFormVisible(true)}
+          style={styles.actionButton}
+          icon={mode === 'in' ? 'arrow-down' : 'arrow-up'}
+        >
+          Manual {mode === 'in' ? 'Receiving' : 'Sale'}
+        </Button>
+        
+        <Button
+          mode="outlined"
+          onPress={handleCSVImport}
+          style={styles.actionButton}
+          icon="file-document"
+          loading={importing}
+          disabled={importing}
+        >
+          Import CSV
+        </Button>
+        
+        <Button
+          mode="outlined"
+          onPress={handleBarcodeScan}
+          style={styles.actionButton}
+          icon="barcode-scan"
+        >
+          Scan
+        </Button>
+      </View>
 
-              <View style={styles.modalContent}>
-                <Text style={styles.modalLabel}>Product Name</Text>
-                <Text style={styles.modalValue}>{selectedProduct.name}</Text>
+      {/* Recent Movements */}
+      <View style={styles.recentHeader}>
+        <Title>Recent {mode === 'in' ? 'Receivings' : 'Sales'}</Title>
+        <Chip icon="refresh" onPress={onRefresh}>Refresh</Chip>
+      </View>
 
-                <Text style={styles.modalLabel}>Batch Number</Text>
-                <Text style={styles.modalValue}>{selectedProduct.batch}</Text>
+      <ScrollView
+        style={styles.recentList}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
+        {recentMovements.length === 0 ? (
+          <Card style={styles.emptyCard}>
+            <Card.Content>
+              <Ionicons name="time-outline" size={48} color="#ccc" />
+              <Text style={styles.emptyText}>No recent {mode === 'in' ? 'receivings' : 'sales'}</Text>
+            </Card.Content>
+          </Card>
+        ) : (
+          recentMovements.map(movement => (
+            <Card key={movement.id} style={styles.movementCard}>
+              <Card.Content>
+                <View style={styles.movementHeader}>
+                  <View>
+                    <Text style={styles.productName}>{movement.product?.name}</Text>
+                    <Text style={styles.batchText}>Batch: {movement.batchNumber}</Text>
+                  </View>
+                  <Chip 
+                    mode="outlined"
+                    style={{ 
+                      borderColor: movement.type === 'STOCK_IN' ? '#4CAF50' : '#F44336',
+                      backgroundColor: movement.type === 'STOCK_IN' ? '#E8F5E9' : '#FFEBEE'
+                    }}
+                  >
+                    {movement.type === 'STOCK_IN' ? 'IN' : 'OUT'} {movement.quantity}
+                  </Chip>
+                </View>
+                
+                <Divider style={styles.divider} />
+                
+                <View style={styles.movementDetails}>
+                  {movement.party && (
+                    <Text style={styles.detailText}>Party: {movement.party}</Text>
+                  )}
+                  {movement.invoiceNo && (
+                    <Text style={styles.detailText}>Invoice: {movement.invoiceNo}</Text>
+                  )}
+                  <Text style={styles.detailText}>
+                    By: {movement.user?.name} • {formatDateTime(movement.createdAt)}
+                  </Text>
+                  {movement.notes && (
+                    <Text style={styles.notesText}>Note: {movement.notes}</Text>
+                  )}
+                </View>
+              </Card.Content>
+            </Card>
+          ))
+        )}
+        <View style={styles.bottomPadding} />
+      </ScrollView>
 
-                <Text style={styles.modalLabel}>Expiry Date</Text>
+      {/* Manual Entry Form Modal */}
+      <Portal>
+        <Dialog visible={formVisible} onDismiss={() => setFormVisible(false)} style={styles.formDialog}>
+          <Dialog.Title>{mode === 'in' ? 'Record Stock Receiving' : 'Record Sale'}</Dialog.Title>
+          <Dialog.Content>
+            <ScrollView style={styles.formContainer}>
+              {/* Product Selection */}
+              <Text style={styles.inputLabel}>Select Product *</Text>
+              <Menu
+                visible={productMenuVisible}
+                onDismiss={() => setProductMenuVisible(false)}
+                anchor={
+                  <TouchableOpacity onPress={() => setProductMenuVisible(true)}>
+                    <TextInput
+                      mode="outlined"
+                      placeholder="Search product..."
+                      value={productSearch}
+                      onChangeText={handleProductSearch}
+                      onFocus={() => setProductMenuVisible(true)}
+                      style={styles.formInput}
+                      right={<TextInput.Icon icon="chevron-down" />}
+                    />
+                  </TouchableOpacity>
+                }
+                style={styles.productMenu}
+              >
+                <ScrollView style={{ maxHeight: 300 }}>
+                  {filteredProducts.length > 0 ? (
+                    filteredProducts.map(product => (
+                      <Menu.Item
+                        key={product.id}
+                        onPress={() => selectProduct(product)}
+                        title={`${product.name} (${product.batchNumber})`}
+                        description={`Qty: ${product.quantity} | ₹${product.price}`}
+                      />
+                    ))
+                  ) : productSearch.trim() !== '' ? (
+                    <Menu.Item title="No products found" disabled />
+                  ) : null}
+                </ScrollView>
+              </Menu>
+
+              {/* Quantity */}
+              <TextInput
+                label={`Quantity * ${mode === 'out' ? '(max available)' : ''}`}
+                value={formData.quantity}
+                onChangeText={text => setFormData({...formData, quantity: text})}
+                mode="outlined"
+                keyboardType="numeric"
+                style={styles.formInput}
+              />
+
+              {/* Party/Customer (for OUT) */}
+              {mode === 'out' && (
                 <TextInput
-                  value={selectedProduct.expiry}
+                  label="Party/Customer Name *"
+                  value={formData.party}
+                  onChangeText={text => setFormData({...formData, party: text})}
                   mode="outlined"
-                  style={styles.modalInput}
+                  style={styles.formInput}
                 />
+              )}
 
-                <Text style={styles.modalLabel}>Quantity</Text>
+              {/* Invoice Number */}
+              <TextInput
+                label="Invoice Number"
+                value={formData.invoiceNo}
+                onChangeText={text => setFormData({...formData, invoiceNo: text})}
+                mode="outlined"
+                style={styles.formInput}
+              />
+
+              {/* Price (optional) */}
+              <TextInput
+                label="Price (leave blank to use product price)"
+                value={formData.price}
+                onChangeText={text => setFormData({...formData, price: text})}
+                mode="outlined"
+                keyboardType="numeric"
+                style={styles.formInput}
+              />
+
+              {/* Batch Number (optional) */}
+              <TextInput
+                label="Batch Number (optional)"
+                value={formData.batchNumber}
+                onChangeText={text => setFormData({...formData, batchNumber: text})}
+                mode="outlined"
+                style={styles.formInput}
+              />
+
+              {/* Expiry Date (optional) */}
+              <TouchableOpacity onPress={() => setShowDatePicker(true)}>
                 <TextInput
-                  value={String(selectedProduct.quantity)}
-                  keyboardType="numeric"
+                  label="Expiry Date (optional)"
+                  value={formData.expiryDate}
                   mode="outlined"
-                  style={styles.modalInput}
+                  editable={false}
+                  style={styles.formInput}
+                  right={<TextInput.Icon icon="calendar" />}
                 />
+              </TouchableOpacity>
 
-                <Text style={styles.modalLabel}>Warehouse</Text>
-                <TextInput
-                  value={selectedProduct.warehouse}
-                  mode="outlined"
-                  style={styles.modalInput}
-                />
-
-                <Text style={styles.modalLabel}>Shelf Location</Text>
-                <TextInput
-                  value={selectedProduct.shelf}
-                  mode="outlined"
-                  style={styles.modalInput}
-                />
-              </View>
-
-              <View style={styles.modalActions}>
-                <Button 
-                  mode="contained" 
-                  onPress={() => {
-                    handleVerifyAndSave([selectedProduct]);
-                    setVerifyModalVisible(false);
-                  }}
-                  style={styles.modalButton}
-                >
-                  Save to Database
-                </Button>
-                <Button 
-                  mode="outlined" 
-                  onPress={() => setVerifyModalVisible(false)}
-                  style={styles.modalButton}
-                >
-                  Cancel
-                </Button>
-              </View>
+              {/* Notes */}
+              <TextInput
+                label="Notes"
+                value={formData.notes}
+                onChangeText={text => setFormData({...formData, notes: text})}
+                mode="outlined"
+                multiline
+                numberOfLines={3}
+                style={styles.formInput}
+              />
             </ScrollView>
-          )}
-        </Modal>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setFormVisible(false)}>Cancel</Button>
+            <Button 
+              mode="contained" 
+              onPress={handleSubmit}
+              loading={loading}
+            >
+              Save
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
       </Portal>
 
       {/* Date Picker */}
-      <DateTimePicker
-        isVisible={showDatePicker}
-        mode="date"
-        onConfirm={(date) => {
-          setShowDatePicker(false);
-          if (dateField === 'expiry') {
-            setManualForm({...manualForm, expiry: date.toISOString().split('T')[0]});
-          }
-        }}
-        onCancel={() => setShowDatePicker(false)}
-      />
-
-      {/* Loading Overlay */}
-      {loading && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#007AFF" />
-          <Text style={styles.loadingText}>Processing...</Text>
-        </View>
+      {showDatePicker && (
+        <DateTimePicker
+          value={new Date()}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={handleDateChange}
+        />
       )}
+
+      {/* Camera Scanner (simplified) */}
+      <Portal>
+        <Dialog visible={cameraVisible} onDismiss={() => setCameraVisible(false)}>
+          <Dialog.Title>Scan Barcode</Dialog.Title>
+          <Dialog.Content>
+            <View style={styles.cameraPlaceholder}>
+              <Ionicons name="camera" size={64} color="#ccc" />
+              <Text>Camera would open here</Text>
+              <Text style={styles.cameraHint}>
+                This would scan barcodes and auto-fill product info
+              </Text>
+            </View>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setCameraVisible(false)}>Close</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
 
       {/* Snackbar */}
       <Snackbar
@@ -869,7 +650,7 @@ export default function InputOutputScreen({ navigation }) {
         duration={3000}
         action={{
           label: 'OK',
-          onPress: () => setSnackbarVisible(false),
+          onPress: () => setSnackbarVisible(false)
         }}
       >
         {snackbarMessage}
@@ -883,261 +664,178 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
-  modeSelector: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    padding: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  modeButton: {
+  loadingContainer: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 12,
-    borderRadius: 8,
-    gap: 8,
-  },
-  modeButtonActive: {
-    backgroundColor: '#E3F2FD',
-  },
-  modeText: {
-    fontSize: 16,
-    color: '#666',
-  },
-  modeTextActive: {
-    color: '#007AFF',
-    fontWeight: 'bold',
-  },
-  inputTabs: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    paddingHorizontal: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-  },
-  activeTab: {
-    borderBottomColor: '#007AFF',
-  },
-  tabText: {
-    fontSize: 14,
-    color: '#666',
-  },
-  activeTabText: {
-    color: '#007AFF',
-    fontWeight: 'bold',
-  },
-  tabContent: {
-    flex: 1,
-  },
-  importOptions: {
-    flexDirection: 'row',
-    padding: 10,
-    gap: 10,
-  },
-  importCard: {
-    flex: 1,
-    elevation: 2,
-  },
-  importCardContent: {
-    alignItems: 'center',
-    padding: 15,
-  },
-  importCardTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  importCardDesc: {
-    fontSize: 10,
-    color: '#666',
-    textAlign: 'center',
-  },
-  pendingCard: {
-    margin: 10,
-    elevation: 2,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  emptyState: {
-    alignItems: 'center',
-    padding: 30,
-  },
-  emptyText: {
-    marginTop: 10,
-    color: '#999',
-  },
-  filterContainer: {
-    marginBottom: 15,
-  },
-  searchInput: {
-    marginBottom: 10,
-    backgroundColor: '#fff',
-  },
-  filterChip: {
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  pendingItemCard: {
-    marginBottom: 10,
-    elevation: 1,
-  },
-  pendingItemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  pendingItemTitle: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  pendingItemName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    flex: 1,
-  },
-  sourceChip: {
-    height: 28,
-  },
-  pendingItemDetails: {
-    marginBottom: 10,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-    gap: 8,
-  },
-  detailText: {
-    fontSize: 14,
-    color: '#666',
-  },
-  divider: {
-    marginVertical: 10,
-  },
-  pendingItemFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  footerLabel: {
-    fontSize: 11,
-    color: '#666',
-  },
-  footerValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  footerActions: {
-    flexDirection: 'row',
-  },
-  bulkActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 15,
-    gap: 10,
-  },
-  formCard: {
-    margin: 10,
-    elevation: 2,
-  },
-  formInput: {
-    marginBottom: 12,
-    backgroundColor: '#fff',
-  },
-  formRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  halfInput: {
-    flex: 1,
-  },
-  submitButton: {
-    marginTop: 10,
-    padding: 6,
-  },
-  scanContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  cameraPlaceholder: {
-    alignItems: 'center',
-    gap: 20,
-  },
-  scanButton: {
-    marginTop: 20,
-  },
-  outputCard: {
-    margin: 10,
-    elevation: 2,
-  },
-  modalContainer: {
-    backgroundColor: 'white',
-    margin: 20,
-    borderRadius: 12,
-    maxHeight: '80%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-  },
-  modalContent: {
-    padding: 16,
-  },
-  modalLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  modalValue: {
-    fontSize: 16,
-    marginBottom: 8,
-  },
-  modalInput: {
-    backgroundColor: '#fff',
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    padding: 16,
-    gap: 12,
-  },
-  modalButton: {
-    flex: 1,
-  },
-  loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.8)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   loadingText: {
     marginTop: 10,
     fontSize: 16,
+    color: '#666',
+  },
+  header: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  modeSelector: {
+    flexDirection: 'row',
+    borderRadius: 8,
+    backgroundColor: '#f0f0f0',
+    padding: 4,
+  },
+  modeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 6,
+    gap: 8,
+  },
+  modeButtonActive: {
+    backgroundColor: '#fff',
+    elevation: 2,
+  },
+  modeText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  modeTextActive: {
     color: '#007AFF',
+    fontWeight: 'bold',
+  },
+  // NEW COMPACT STATS STYLES
+  compactStatsContainer: {
+    marginTop: 8,
+    marginBottom: 12,
+    height: 65,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  compactStatsContent: {
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  compactStatItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 70,
+  },
+  compactStatValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  compactStatLabel: {
+    fontSize: 11,
+    color: '#666',
+    marginTop: 2,
+  },
+  compactStatDivider: {
+    width: 1,
+    height: 35,
+    backgroundColor: '#e0e0e0',
+    marginHorizontal: 12,
+  },
+  // Action Buttons
+  actionButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    padding: 16,
+    gap: 12,
+  },
+  actionButton: {
+    flex: 1,
+    minWidth: 100,
+  },
+  recentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  recentList: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  emptyCard: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  emptyText: {
+    textAlign: 'center',
+    color: '#999',
+    marginTop: 8,
+  },
+  movementCard: {
+    marginBottom: 8,
+    elevation: 2,
+  },
+  movementHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  productName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  batchText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  divider: {
+    marginVertical: 8,
+  },
+  movementDetails: {
+    gap: 4,
+  },
+  detailText: {
+    fontSize: 13,
+    color: '#666',
+  },
+  notesText: {
+    fontSize: 12,
+    color: '#999',
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
+  bottomPadding: {
+    height: 80,
+  },
+  formDialog: {
+    maxHeight: '80%',
+  },
+  formContainer: {
+    maxHeight: 400,
+  },
+  formInput: {
+    marginBottom: 12,
+    backgroundColor: '#fff',
+  },
+  inputLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+  },
+  productMenu: {
+    width: '100%',
+    marginTop: 40,
+  },
+  cameraPlaceholder: {
+    alignItems: 'center',
+    padding: 20,
+    gap: 12,
+  },
+  cameraHint: {
+    textAlign: 'center',
+    color: '#666',
+    fontSize: 12,
   },
 });

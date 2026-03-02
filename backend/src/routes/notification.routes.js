@@ -1,29 +1,25 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const { authenticate } = require('../middleware/auth.middleware');
 const {
-  getNotifications,
-  getUnreadCount,
-  markAsRead,
-  markAllAsRead,
-  deleteNotification,
-  clearAllNotifications
-} = require('../controllers/notification.controller');
+  getMovements,
+  getMovementById,
+  createMovement,
+  getMovementStats,
+  importCSV
+} = require('../controllers/movement.controller');
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 // All routes require authentication
 router.use(authenticate);
 
-// Notification routes
-// Notification routes - ORDER MATTERS!
-router.get('/', getNotifications);
-router.get('/unread/count', getUnreadCount);
-
-// Specific actions first (these are not IDs)
-router.delete('/clear-all', clearAllNotifications);  // This must come BEFORE /:id
-router.post('/mark-all-read', markAllAsRead);
-
-// Parameterized routes last
-router.patch('/:id/read', markAsRead);
-router.delete('/:id', deleteNotification);
+// Movement routes
+router.get('/stats', getMovementStats);
+router.post('/import', upload.single('file'), importCSV);
+router.get('/', getMovements);
+router.post('/', createMovement);
+router.get('/:id', getMovementById);
 
 module.exports = router;

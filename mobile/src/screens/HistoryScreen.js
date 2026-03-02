@@ -430,32 +430,30 @@ export default function HistoryScreen({ navigation }) {
       />
 
       {/* Stats Cards */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsContainer}>
-        <Card style={styles.statCard}>
-          <Card.Content>
-            <Text style={styles.statValue}>{stats.today}</Text>
-            <Text style={styles.statLabel}>Today</Text>
-          </Card.Content>
-        </Card>
-        <Card style={styles.statCard}>
-          <Card.Content>
-            <Text style={styles.statValue}>{stats.week}</Text>
-            <Text style={styles.statLabel}>This Week</Text>
-          </Card.Content>
-        </Card>
-        <Card style={styles.statCard}>
-          <Card.Content>
-            <Text style={styles.statValue}>{stats.month}</Text>
-            <Text style={styles.statLabel}>This Month</Text>
-          </Card.Content>
-        </Card>
-        <Card style={styles.statCard}>
-          <Card.Content>
-            <Text style={styles.statValue}>{stats.total}</Text>
-            <Text style={styles.statLabel}>All Time</Text>
-          </Card.Content>
-        </Card>
-      </ScrollView>
+      {/* Compact Stats Cards */}
+{/* Ultra Compact Stats */}
+<View style={styles.ultraStatsContainer}>
+  {/* Chip-Style Stats */}
+<ScrollView 
+  horizontal 
+  showsHorizontalScrollIndicator={false} 
+  style={styles.chipStatsContainer}
+  contentContainerStyle={styles.chipStatsContent}
+>
+  <Chip icon="today" mode="outlined" style={styles.statChip}>
+    Today: {stats.today}
+  </Chip>
+  <Chip icon="calendar-week" mode="outlined" style={styles.statChip}>
+    Week: {stats.week}
+  </Chip>
+  <Chip icon="calendar-month" mode="outlined" style={styles.statChip}>
+    Month: {stats.month}
+  </Chip>
+  <Chip icon="calendar" mode="outlined" style={styles.statChip}>
+    Total: {stats.total}
+  </Chip>
+</ScrollView>
+</View>
 
       {/* Active Filters */}
       {(selectedAction !== 'all' || selectedDateRange !== 'week') && (
@@ -792,15 +790,16 @@ const styles = StyleSheet.create({
     marginTop: 8,
     elevation: 2,
   },
-  statsContainer: {
-    paddingHorizontal: 16,
-    marginBottom: 16,
-  },
-  statCard: {
-    width: 100,
-    marginRight: 12,
-    elevation: 2,
-  },
+  ultraStatsContainer: {
+  marginTop: 8,
+  marginBottom: 8,
+  paddingHorizontal: 16,
+  height: 40,
+},
+ultraStatChip: {
+  marginRight: 8,
+  height: 32,
+},
   statValue: {
     fontSize: 20,
     fontWeight: 'bold',
@@ -949,4 +948,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 1000,
   },
+  
+  
 });

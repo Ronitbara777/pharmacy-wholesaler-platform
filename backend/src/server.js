@@ -18,6 +18,7 @@ const notificationRoutes = require('./routes/notification.routes');
 const activityRoutes = require('./routes/activity.routes');
 const importRoutes = require('./routes/import.routes');
 
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -80,6 +81,7 @@ app.use(`${process.env.API_PREFIX}/notifications`, notificationRoutes);
 app.use(`${process.env.API_PREFIX}/activities`, activityRoutes);
 app.use(`${process.env.API_PREFIX}/import`, importRoutes);
 app.use(`${process.env.API_PREFIX}/activities`, activityRoutes);
+app.use(`${process.env.API_PREFIX}/movements`, movementRoutes);
 
 // 404 handler
 app.use((req, res) => {

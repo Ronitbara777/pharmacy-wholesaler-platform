@@ -1,40 +1,25 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const { authenticate } = require('../middleware/auth.middleware');
+const {
+  getMovements,
+  getMovementById,
+  createMovement,
+  getMovementStats,  // Make sure this is imported
+  importCSV
+} = require('../controllers/movement.controller');
 
+const upload = multer({ storage: multer.memoryStorage() });
+
+// All routes require authentication
 router.use(authenticate);
 
-// Get all movements
-router.get('/', async (req, res) => {
-  try {
-    const prisma = require('../config/prisma');
-    const movements = await prisma.stockMovement.findMany({
-      include: {
-        product: { select: { name: true, batchNumber: true } },
-        user: { select: { name: true } }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-    res.json({ success: true, data: movements });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// Create movement
-router.post('/', async (req, res) => {
-  try {
-    const prisma = require('../config/prisma');
-    const movement = await prisma.stockMovement.create({
-      data: {
-        ...req.body,
-        userId: req.user.id
-      }
-    });
-    res.json({ success: true, data: movement });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
+// IMPORTANT: Order matters - specific routes before dynamic ones
+router.get('/stats', getMovementStats);  // This must come BEFORE /:id
+router.post('/import', upload.single('file'), importCSV);
+router.get('/', getMovements);
+router.post('/', createMovement);
+router.get('/:id', getMovementById);
 
 module.exports = router;
