@@ -4,17 +4,22 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const AuthService = {
   // Login user
   login: async (email, password) => {
+    console.log('🔑 AuthService.login called with:', { email });
     try {
+      console.log('📤 Sending login request to API...');
       const response = await api.post('/auth/login', { email, password });
+      console.log('📥 API response received:', response);
       
       if (response.success) {
-        // Store token
+        console.log('✅ Login successful, storing token...');
         await AsyncStorage.setItem('token', response.data.token);
         await AsyncStorage.setItem('user', JSON.stringify(response.data.user));
+        console.log('✅ Token stored successfully');
       }
       
       return response;
     } catch (error) {
+      console.error('❌ AuthService.login error:', error);
       throw error;
     }
   },
@@ -31,6 +36,7 @@ const AuthService = {
       
       return response;
     } catch (error) {
+      console.error('❌ Register error:', error);
       throw error;
     }
   },
@@ -41,26 +47,42 @@ const AuthService = {
       const response = await api.get('/auth/profile');
       return response;
     } catch (error) {
+      console.error('❌ Get profile error:', error);
       throw error;
+    }
+  },
+
+  // Check if user is authenticated
+  isAuthenticated: async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      return !!token;
+    } catch (error) {
+      console.error('❌ Check auth error:', error);
+      return false;
+    }
+  },
+
+  // Get stored user
+  getCurrentUser: async () => {
+    try {
+      const userStr = await AsyncStorage.getItem('user');
+      return userStr ? JSON.parse(userStr) : null;
+    } catch (error) {
+      console.error('❌ Get user error:', error);
+      return null;
     }
   },
 
   // Logout
   logout: async () => {
-    await AsyncStorage.removeItem('token');
-    await AsyncStorage.removeItem('user');
-  },
-
-  // Check if user is authenticated
-  isAuthenticated: async () => {
-    const token = await AsyncStorage.getItem('token');
-    return !!token;
-  },
-
-  // Get stored user
-  getCurrentUser: async () => {
-    const userStr = await AsyncStorage.getItem('user');
-    return userStr ? JSON.parse(userStr) : null;
+    try {
+      await AsyncStorage.removeItem('token');
+      await AsyncStorage.removeItem('user');
+      console.log('✅ Logout successful');
+    } catch (error) {
+      console.error('❌ Logout error:', error);
+    }
   },
 };
 

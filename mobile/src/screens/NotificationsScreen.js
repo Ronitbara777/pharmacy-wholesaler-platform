@@ -1,149 +1,85 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import {
   Card,
   Title,
-  Paragraph,
   Text,
   Chip,
   Badge,
   IconButton,
   Divider,
   Button,
-  Switch,
-  List,
-  Avatar,
-  Searchbar,
   Menu,
+  Avatar,
+  ActivityIndicator,
+  Portal,
+  Dialog,
+  Searchbar,
+  Snackbar,
 } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
+import AlertService from '../services/alert.service';
+import { useFocusEffect } from '@react-navigation/native';
 
 console.log('🔔 NotificationsScreen loaded');
-
-// Mock notifications data
-const mockNotifications = [
-  {
-    id: '1',
-    type: 'expiry',
-    title: 'Products Expiring Soon',
-    message: '5 products will expire in the next 30 days',
-    products: [
-      { name: 'Paracetamol 500mg', batch: 'B2024-001', expiry: '2024-12-15', daysLeft: 25 },
-      { name: 'Amoxicillin 250mg', batch: 'B2024-002', expiry: '2024-11-30', daysLeft: 18 },
-      { name: 'Vitamin C 1000mg', batch: 'B2024-003', expiry: '2024-10-20', daysLeft: 12 },
-    ],
-    severity: 'high',
-    timestamp: '2024-02-22T09:00:00Z',
-    read: false,
-  },
-  {
-    id: '2',
-    type: 'stock',
-    title: 'Low Stock Alert',
-    message: '3 products are running low on stock',
-    products: [
-      { name: 'Ibuprofen 400mg', current: 45, threshold: 100 },
-      { name: 'Metformin 500mg', current: 30, threshold: 100 },
-      { name: 'Aspirin 75mg', current: 12, threshold: 50 },
-    ],
-    severity: 'medium',
-    timestamp: '2024-02-22T10:30:00Z',
-    read: false,
-  },
-  {
-    id: '3',
-    type: 'system',
-    title: 'System Update',
-    message: 'Database backup completed successfully',
-    details: 'Backup size: 2.3 GB, Duration: 5 minutes',
-    severity: 'info',
-    timestamp: '2024-02-22T08:00:00Z',
-    read: true,
-  },
-  {
-    id: '4',
-    type: 'expiry',
-    title: 'Expired Products',
-    message: '2 products have expired and need disposal',
-    products: [
-      { name: 'Cetirizine 10mg', batch: 'B2024-004', expiry: '2024-08-05' },
-      { name: 'Omeprazole 20mg', batch: 'B2024-005', expiry: '2024-07-20' },
-    ],
-    severity: 'critical',
-    timestamp: '2024-02-21T14:00:00Z',
-    read: false,
-  },
-  {
-    id: '5',
-    type: 'stock',
-    title: 'Reorder Recommended',
-    message: '5 products have reached reorder point',
-    products: [
-      { name: 'Paracetamol 500mg', current: 150, reorderAt: 200 },
-      { name: 'Amoxicillin 250mg', current: 80, reorderAt: 100 },
-    ],
-    severity: 'low',
-    timestamp: '2024-02-21T11:00:00Z',
-    read: true,
-  },
-  {
-    id: '6',
-    type: 'system',
-    title: 'New Version Available',
-    message: 'App version 2.0.0 is ready to install',
-    details: 'Includes new features and bug fixes',
-    severity: 'info',
-    timestamp: '2024-02-20T16:00:00Z',
-    read: true,
-  },
-];
-
-// Alert preferences
-const defaultPreferences = {
-  expiryAlerts: true,
-  expiryDays: 30,
-  lowStockAlerts: true,
-  lowStockThreshold: 100,
-  systemAlerts: true,
-  emailNotifications: false,
-  pushNotifications: true,
-  soundEnabled: true,
-};
 
 export default function NotificationsScreen({ navigation }) {
   console.log('🔔 NotificationsScreen rendering');
   
-  const [notifications, setNotifications] = useState(mockNotifications);
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState('all'); // all, unread, expiry, stock, system
   const [searchQuery, setSearchQuery] = useState('');
-  const [showPreferences, setShowPreferences] = useState(false);
-  const [preferences, setPreferences] = useState(defaultPreferences);
   const [selectedNotification, setSelectedNotification] = useState(null);
   const [detailsVisible, setDetailsVisible] = useState(false);
-  const [filterMenuVisible, setFilterMenuVisible] = useState(false);
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+
+  // Load notifications when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      loadNotifications();
+    }, [])
+  );
+
+  const loadNotifications = async () => {
+    try {
+      console.log('🔔 Loading notifications...');
+      const response = await AlertService.getNotifications();
+      
+      if (response.success) {
+        console.log(`🔔 Loaded ${response.data.length} notifications`);
+        setNotifications(response.data);
+      }
+    } catch (error) {
+      console.error('❌ Error loading notifications:', error);
+      Alert.alert('Error', 'Failed to load notifications');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadNotifications();
+  };
 
   // Calculate stats
   const stats = {
     total: notifications.length,
     unread: notifications.filter(n => !n.read).length,
-    critical: notifications.filter(n => n.severity === 'critical' && !n.read).length,
-    expiry: notifications.filter(n => n.type === 'expiry').length,
-    stock: notifications.filter(n => n.type === 'stock').length,
-  };
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    // Simulate API call
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 1500);
+    expiry: notifications.filter(n => n.type === 'EXPIRY').length,
+    stock: notifications.filter(n => n.type === 'LOW_STOCK').length,
+    system: notifications.filter(n => n.type === 'SYSTEM').length,
   };
 
   // Filter notifications
@@ -153,8 +89,9 @@ export default function NotificationsScreen({ navigation }) {
     // Apply search
     if (searchQuery) {
       filtered = filtered.filter(n => 
-        n.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        n.message.toLowerCase().includes(searchQuery.toLowerCase())
+        n.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        n.message?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        n.product?.name?.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
 
@@ -162,13 +99,14 @@ export default function NotificationsScreen({ navigation }) {
     if (filter !== 'all') {
       if (filter === 'unread') {
         filtered = filtered.filter(n => !n.read);
-      } else {
-        filtered = filtered.filter(n => n.type === filter);
+      } else if (filter === 'expiry') {
+        filtered = filtered.filter(n => n.type === 'EXPIRY');
+      } else if (filter === 'stock') {
+        filtered = filtered.filter(n => n.type === 'LOW_STOCK');
+      } else if (filter === 'system') {
+        filtered = filtered.filter(n => n.type === 'SYSTEM');
       }
     }
-
-    // Sort by timestamp (newest first)
-    filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
     return filtered;
   };
@@ -176,42 +114,126 @@ export default function NotificationsScreen({ navigation }) {
   const filteredNotifications = getFilteredNotifications();
 
   // Mark as read
-  const markAsRead = (id) => {
-    setNotifications(notifications.map(n => 
-      n.id === id ? { ...n, read: true } : n
-    ));
+  const handleMarkAsRead = async (id) => {
+    try {
+      const response = await AlertService.markAsRead(id);
+      
+      if (response.success) {
+        // Update local state
+        setNotifications(notifications.map(n => 
+          n.id === id ? { ...n, read: true } : n
+        ));
+        showSnackbar('Notification marked as read');
+      }
+    } catch (error) {
+      console.error('❌ Error marking as read:', error);
+      Alert.alert('Error', 'Failed to mark notification as read');
+    }
   };
 
   // Mark all as read
-  const markAllAsRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, read: true })));
+  const handleMarkAllAsRead = async () => {
+    try {
+      const response = await AlertService.markAllAsRead();
+      
+      if (response.success) {
+        setNotifications(notifications.map(n => ({ ...n, read: true })));
+        showSnackbar('All notifications marked as read');
+      }
+    } catch (error) {
+      console.error('❌ Error marking all as read:', error);
+      Alert.alert('Error', 'Failed to mark all as read');
+    }
   };
 
   // Delete notification
-  const deleteNotification = (id) => {
-    setNotifications(notifications.filter(n => n.id !== id));
+  const handleDelete = async (id) => {
+    Alert.alert(
+      'Delete Notification',
+      'Are you sure you want to delete this notification?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await AlertService.deleteNotification(id);
+              
+              if (response.success) {
+                setNotifications(notifications.filter(n => n.id !== id));
+                if (selectedNotification?.id === id) {
+                  setDetailsVisible(false);
+                }
+                showSnackbar('Notification deleted');
+              }
+            } catch (error) {
+              console.error('❌ Error deleting notification:', error);
+              Alert.alert('Error', 'Failed to delete notification');
+            }
+          }
+        }
+      ]
+    );
   };
 
   // Clear all
-  const clearAll = () => {
-    setNotifications([]);
+ // Clear all
+const handleClearAll = () => {
+  if (notifications.length === 0) return;
+  
+  Alert.alert(
+    'Clear All',
+    `Are you sure you want to delete all ${notifications.length} notifications?`,
+    [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Clear All',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            setLoading(true);
+            const response = await AlertService.clearAllNotifications();
+            
+            if (response.success) {
+              setNotifications([]);
+              setDetailsVisible(false);
+              showSnackbar(response.message || 'All notifications cleared');
+            }
+          } catch (error) {
+            console.error('❌ Error clearing all:', error);
+            Alert.alert('Error', error.message || 'Failed to clear notifications');
+          } finally {
+            setLoading(false);
+          }
+        }
+      }
+    ]
+  );
+};
+
+  const showSnackbar = (message) => {
+    setSnackbarMessage(message);
+    setSnackbarVisible(true);
   };
 
-  // Get icon based on type and severity
-  const getNotificationIcon = (type, severity) => {
-    if (type === 'expiry') return 'calendar';
-    if (type === 'stock') return 'warning';
-    if (type === 'system') return 'information-circle';
-    return 'notifications';
+  // Get icon based on type
+  const getNotificationIcon = (type) => {
+    switch(type) {
+      case 'EXPIRY': return 'calendar';
+      case 'LOW_STOCK': return 'warning';
+      case 'SYSTEM': return 'information-circle';
+      default: return 'notifications';
+    }
   };
 
   // Get color based on severity
   const getSeverityColor = (severity) => {
     switch(severity) {
-      case 'critical': return '#F44336';
-      case 'high': return '#FF9800';
-      case 'medium': return '#FFC107';
-      case 'low': return '#4CAF50';
+      case 'CRITICAL': return '#F44336';
+      case 'HIGH': return '#FF9800';
+      case 'MEDIUM': return '#FFC107';
+      case 'LOW': return '#4CAF50';
       default: return '#2196F3';
     }
   };
@@ -232,88 +254,14 @@ export default function NotificationsScreen({ navigation }) {
     return date.toLocaleDateString();
   };
 
-  // Render notification item
-  const renderNotification = (notification) => (
-    <TouchableOpacity
-      key={notification.id}
-      onPress={() => {
-        markAsRead(notification.id);
-        setSelectedNotification(notification);
-        setDetailsVisible(true);
-      }}
-    >
-      <Card style={[styles.notificationCard, !notification.read && styles.unreadCard]}>
-        <Card.Content>
-          <View style={styles.notificationHeader}>
-            <View style={styles.notificationTitle}>
-              <Avatar.Icon
-                size={40}
-                icon={getNotificationIcon(notification.type, notification.severity)}
-                style={[styles.notificationIcon, { backgroundColor: getSeverityColor(notification.severity) }]}
-              />
-              <View style={styles.titleContainer}>
-                <Text style={styles.notificationTitleText}>{notification.title}</Text>
-                <Text style={styles.notificationTime}>{formatTimestamp(notification.timestamp)}</Text>
-              </View>
-            </View>
-            <View style={styles.notificationActions}>
-              {!notification.read && <Badge style={styles.unreadBadge} size={10} />}
-              <Menu
-                visible={false}
-                onDismiss={() => {}}
-                anchor={
-                  <IconButton
-                    icon="dots-vertical"
-                    size={20}
-                    onPress={() => {}}
-                  />
-                }
-              >
-                <Menu.Item onPress={() => markAsRead(notification.id)} title="Mark as Read" />
-                <Menu.Item onPress={() => deleteNotification(notification.id)} title="Delete" />
-              </Menu>
-            </View>
-          </View>
-
-          <Text style={styles.notificationMessage}>{notification.message}</Text>
-
-          {notification.products && notification.products.length > 0 && (
-            <View style={styles.productList}>
-              {notification.products.slice(0, 2).map((product, index) => (
-                <Chip key={index} style={styles.productChip} mode="outlined">
-                  {product.name}
-                  {product.daysLeft && ` (${product.daysLeft}d)`}
-                  {product.current && `: ${product.current}`}
-                </Chip>
-              ))}
-              {notification.products.length > 2 && (
-                <Chip mode="outlined">+{notification.products.length - 2} more</Chip>
-              )}
-            </View>
-          )}
-
-          <View style={styles.notificationFooter}>
-            <Chip 
-              mode="outlined"
-              style={[styles.typeChip, { borderColor: getSeverityColor(notification.severity) }]}
-              textStyle={{ color: getSeverityColor(notification.severity) }}
-            >
-              {notification.type} • {notification.severity}
-            </Chip>
-            {!notification.read && (
-              <Button 
-                mode="text" 
-                onPress={() => markAsRead(notification.id)}
-                compact
-              >
-                Mark Read
-              </Button>
-            )}
-          </View>
-        </Card.Content>
-      </Card>
-    </TouchableOpacity>
-  );
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={styles.loadingText}>Loading notifications...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -322,20 +270,15 @@ export default function NotificationsScreen({ navigation }) {
         <View>
           <Title style={styles.headerTitle}>Alerts</Title>
           <Text style={styles.headerSubtitle}>
-            {stats.unread} unread • {stats.critical} critical
+            {stats.unread} unread • {stats.total} total
           </Text>
         </View>
         <View style={styles.headerActions}>
-          <IconButton
-            icon="filter"
-            size={24}
-            onPress={() => setFilterMenuVisible(true)}
-          />
-          <IconButton
-            icon="cog"
-            size={24}
-            onPress={() => setShowPreferences(true)}
-          />
+          {stats.unread > 0 && (
+            <Button mode="text" onPress={handleMarkAllAsRead}>
+              Mark all read
+            </Button>
+          )}
         </View>
       </View>
 
@@ -348,47 +291,54 @@ export default function NotificationsScreen({ navigation }) {
       />
 
       {/* Filter Chips */}
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        style={styles.filterContainer}
-      >
-        <Chip
-          selected={filter === 'all'}
-          onPress={() => setFilter('all')}
-          style={styles.filterChip}
-        >
-          All ({stats.total})
-        </Chip>
-        <Chip
-          selected={filter === 'unread'}
-          onPress={() => setFilter('unread')}
-          style={styles.filterChip}
-        >
-          Unread ({stats.unread})
-        </Chip>
-        <Chip
-          selected={filter === 'expiry'}
-          onPress={() => setFilter('expiry')}
-          style={styles.filterChip}
-        >
-          Expiry ({stats.expiry})
-        </Chip>
-        <Chip
-          selected={filter === 'stock'}
-          onPress={() => setFilter('stock')}
-          style={styles.filterChip}
-        >
-          Stock ({stats.stock})
-        </Chip>
-        <Chip
-          selected={filter === 'system'}
-          onPress={() => setFilter('system')}
-          style={styles.filterChip}
-        >
-          System
-        </Chip>
-      </ScrollView>
+      {/* Compact Filter Chips */}
+<ScrollView 
+  horizontal 
+  showsHorizontalScrollIndicator={false} 
+  style={styles.compactFilterContainer}
+  contentContainerStyle={styles.compactFilterContent}
+>
+  <Chip
+    selected={filter === 'all'}
+    onPress={() => setFilter('all')}
+    style={styles.compactFilterChip}
+    textStyle={styles.compactFilterText}
+  >
+    All ({stats.total})
+  </Chip>
+  <Chip
+    selected={filter === 'unread'}
+    onPress={() => setFilter('unread')}
+    style={styles.compactFilterChip}
+    textStyle={styles.compactFilterText}
+  >
+    Unread ({stats.unread})
+  </Chip>
+  <Chip
+    selected={filter === 'expiry'}
+    onPress={() => setFilter('expiry')}
+    style={styles.compactFilterChip}
+    textStyle={styles.compactFilterText}
+  >
+    Expiry ({stats.expiry})
+  </Chip>
+  <Chip
+    selected={filter === 'stock'}
+    onPress={() => setFilter('stock')}
+    style={styles.compactFilterChip}
+    textStyle={styles.compactFilterText}
+  >
+    Stock ({stats.stock})
+  </Chip>
+  <Chip
+    selected={filter === 'system'}
+    onPress={() => setFilter('system')}
+    style={styles.compactFilterChip}
+    textStyle={styles.compactFilterText}
+  >
+    System ({stats.system})
+  </Chip>
+</ScrollView>
 
       {/* Notifications List */}
       <ScrollView
@@ -401,260 +351,194 @@ export default function NotificationsScreen({ navigation }) {
           <View style={styles.emptyState}>
             <Ionicons name="notifications-off-outline" size={64} color="#ccc" />
             <Text style={styles.emptyText}>No notifications</Text>
-            <Text style={styles.emptySubtext}>You're all caught up!</Text>
+            <Text style={styles.emptySubtext}>
+              {searchQuery ? 'Try a different search' : "You're all caught up!"}
+            </Text>
           </View>
         ) : (
-          <>
-            {filteredNotifications.map(renderNotification)}
-            
-            {filteredNotifications.length > 0 && (
-              <View style={styles.bulkActions}>
-                <Button mode="outlined" onPress={markAllAsRead} style={styles.bulkButton}>
-                  Mark All Read
-                </Button>
-                <Button mode="outlined" onPress={clearAll} style={styles.bulkButton}>
-                  Clear All
-                </Button>
-              </View>
-            )}
-          </>
+          filteredNotifications.map(notification => (
+            <TouchableOpacity
+              key={notification.id}
+              onPress={() => {
+                if (!notification.read) {
+                  handleMarkAsRead(notification.id);
+                }
+                setSelectedNotification(notification);
+                setDetailsVisible(true);
+              }}
+            >
+              <Card style={[styles.notificationCard, !notification.read && styles.unreadCard]}>
+                <Card.Content>
+                  <View style={styles.notificationHeader}>
+                    <View style={styles.notificationTitle}>
+                      <Avatar.Icon
+                        size={40}
+                        icon={getNotificationIcon(notification.type)}
+                        style={[styles.notificationIcon, { backgroundColor: getSeverityColor(notification.severity) }]}
+                      />
+                      <View style={styles.titleContainer}>
+                        <Text style={styles.notificationTitleText}>
+                          {notification.title}
+                        </Text>
+                        <Text style={styles.notificationTime}>
+                          {formatTimestamp(notification.createdAt)}
+                        </Text>
+                      </View>
+                    </View>
+                    {!notification.read && <Badge style={styles.unreadBadge} size={10} />}
+                  </View>
+
+                  <Text style={styles.notificationMessage} numberOfLines={2}>
+                    {notification.message}
+                  </Text>
+
+                  {notification.product && (
+                    <View style={styles.productInfo}>
+                      <Chip 
+                        icon="pill" 
+                        mode="outlined" 
+                        style={styles.productChip}
+                        onPress={() => {
+                          setDetailsVisible(false);
+                          navigation.navigate('Inventory', { 
+                            screen: 'Inventory',
+                            params: { productId: notification.product.id }
+                          });
+                        }}
+                      >
+                        {notification.product.name}
+                      </Chip>
+                    </View>
+                  )}
+
+                  <View style={styles.notificationFooter}>
+                    <Chip 
+                      mode="outlined"
+                      style={[styles.typeChip, { borderColor: getSeverityColor(notification.severity) }]}
+                      textStyle={{ color: getSeverityColor(notification.severity) }}
+                    >
+                      {notification.type} • {notification.severity}
+                    </Chip>
+                    
+                    <View style={styles.footerActions}>
+                      {!notification.read && (
+                        <Button 
+                          mode="text" 
+                          onPress={() => handleMarkAsRead(notification.id)}
+                          compact
+                        >
+                          Mark Read
+                        </Button>
+                      )}
+                      <IconButton
+                        icon="delete"
+                        size={20}
+                        onPress={() => handleDelete(notification.id)}
+                      />
+                    </View>
+                  </View>
+                </Card.Content>
+              </Card>
+            </TouchableOpacity>
+          ))
+        )}
+        
+        {notifications.length > 0 && (
+          <Button 
+            mode="outlined" 
+            onPress={handleClearAll}
+            style={styles.clearButton}
+            color="#F44336"
+          >
+            Clear All Notifications
+          </Button>
         )}
         <View style={styles.bottomPadding} />
       </ScrollView>
 
-      {/* Preferences Modal */}
-      {showPreferences && (
-        <View style={styles.modalOverlay}>
-          <Card style={styles.preferencesCard}>
-            <Card.Content>
-              <View style={styles.modalHeader}>
-                <Title>Alert Preferences</Title>
-                <IconButton icon="close" onPress={() => setShowPreferences(false)} />
-              </View>
-
-              <Divider style={styles.divider} />
-
-              <List.Section>
-                <List.Subheader>Alert Types</List.Subheader>
-                
-                <List.Item
-                  title="Expiry Alerts"
-                  description={`Notify ${preferences.expiryDays} days before expiry`}
-                  left={props => <List.Icon {...props} icon="calendar" />}
-                  right={props => (
-                    <Switch
-                      value={preferences.expiryAlerts}
-                      onValueChange={(value) => 
-                        setPreferences({...preferences, expiryAlerts: value})
-                      }
-                    />
-                  )}
-                />
-                
-                {preferences.expiryAlerts && (
-                  <View style={styles.preferenceDetail}>
-                    <Text>Days before expiry</Text>
-                    <View style={styles.daysSelector}>
-                      {[15, 30, 45, 60].map(days => (
-                        <Chip
-                          key={days}
-                          selected={preferences.expiryDays === days}
-                          onPress={() => setPreferences({...preferences, expiryDays: days})}
-                          style={styles.daysChip}
-                        >
-                          {days} days
-                        </Chip>
-                      ))}
-                    </View>
-                  </View>
-                )}
-
-                <List.Item
-                  title="Low Stock Alerts"
-                  description={`Alert when stock below ${preferences.lowStockThreshold}`}
-                  left={props => <List.Icon {...props} icon="alert" />}
-                  right={props => (
-                    <Switch
-                      value={preferences.lowStockAlerts}
-                      onValueChange={(value) => 
-                        setPreferences({...preferences, lowStockAlerts: value})
-                      }
-                    />
-                  )}
-                />
-
-                {preferences.lowStockAlerts && (
-                  <View style={styles.preferenceDetail}>
-                    <Text>Threshold quantity</Text>
-                    <View style={styles.daysSelector}>
-                      {[50, 100, 200, 500].map(threshold => (
-                        <Chip
-                          key={threshold}
-                          selected={preferences.lowStockThreshold === threshold}
-                          onPress={() => setPreferences({...preferences, lowStockThreshold: threshold})}
-                          style={styles.daysChip}
-                        >
-                          {threshold} units
-                        </Chip>
-                      ))}
-                    </View>
-                  </View>
-                )}
-
-                <List.Item
-                  title="System Alerts"
-                  description="Updates, maintenance, backups"
-                  left={props => <List.Icon {...props} icon="information" />}
-                  right={props => (
-                    <Switch
-                      value={preferences.systemAlerts}
-                      onValueChange={(value) => 
-                        setPreferences({...preferences, systemAlerts: value})
-                      }
-                    />
-                  )}
-                />
-
-                <List.Subheader>Notification Methods</List.Subheader>
-
-                <List.Item
-                  title="Push Notifications"
-                  left={props => <List.Icon {...props} icon="cellphone" />}
-                  right={props => (
-                    <Switch
-                      value={preferences.pushNotifications}
-                      onValueChange={(value) => 
-                        setPreferences({...preferences, pushNotifications: value})
-                      }
-                    />
-                  )}
-                />
-
-                <List.Item
-                  title="Email Notifications"
-                  left={props => <List.Icon {...props} icon="email" />}
-                  right={props => (
-                    <Switch
-                      value={preferences.emailNotifications}
-                      onValueChange={(value) => 
-                        setPreferences({...preferences, emailNotifications: value})
-                      }
-                    />
-                  )}
-                />
-
-                <List.Item
-                  title="Sound"
-                  left={props => <List.Icon {...props} icon="volume-high" />}
-                  right={props => (
-                    <Switch
-                      value={preferences.soundEnabled}
-                      onValueChange={(value) => 
-                        setPreferences({...preferences, soundEnabled: value})
-                      }
-                    />
-                  )}
-                />
-              </List.Section>
-
-              <Button 
-                mode="contained" 
-                onPress={() => setShowPreferences(false)}
-                style={styles.saveButton}
-              >
-                Save Preferences
-              </Button>
-            </Card.Content>
-          </Card>
-        </View>
-      )}
-
       {/* Notification Details Modal */}
-      {selectedNotification && detailsVisible && (
-        <View style={styles.modalOverlay}>
-          <Card style={styles.detailsCard}>
-            <Card.Content>
-              <View style={styles.modalHeader}>
-                <View style={styles.detailsTitle}>
-                  <Avatar.Icon
-                    size={50}
-                    icon={getNotificationIcon(selectedNotification.type, selectedNotification.severity)}
-                    style={[styles.detailIcon, { backgroundColor: getSeverityColor(selectedNotification.severity) }]}
-                  />
-                  <View>
-                    <Title>{selectedNotification.title}</Title>
-                    <Text style={styles.detailTime}>
-                      {new Date(selectedNotification.timestamp).toLocaleString()}
-                    </Text>
-                  </View>
+      <Portal>
+        <Dialog visible={detailsVisible} onDismiss={() => setDetailsVisible(false)}>
+          {selectedNotification && (
+            <>
+              <Dialog.Title>{selectedNotification.title}</Dialog.Title>
+              <Dialog.Content>
+                <View style={styles.detailSection}>
+                  <Text style={styles.detailLabel}>Message</Text>
+                  <Text style={styles.detailValue}>{selectedNotification.message}</Text>
                 </View>
-                <IconButton icon="close" onPress={() => setDetailsVisible(false)} />
-              </View>
 
-              <Divider style={styles.divider} />
+                <Divider style={styles.divider} />
 
-              <Text style={styles.detailMessage}>{selectedNotification.message}</Text>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Type</Text>
+                  <Chip 
+                    mode="outlined"
+                    style={{ borderColor: getSeverityColor(selectedNotification.severity) }}
+                  >
+                    {selectedNotification.type}
+                  </Chip>
+                </View>
 
-              {selectedNotification.products && (
-                <View style={styles.detailProducts}>
-                  <Text style={styles.detailSubtitle}>Affected Products:</Text>
-                  {selectedNotification.products.map((product, index) => (
-                    <Card key={index} style={styles.detailProductCard}>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Severity</Text>
+                  <Chip 
+                    mode="outlined"
+                    style={{ borderColor: getSeverityColor(selectedNotification.severity) }}
+                    textStyle={{ color: getSeverityColor(selectedNotification.severity) }}
+                  >
+                    {selectedNotification.severity}
+                  </Chip>
+                </View>
+
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Received</Text>
+                  <Text>{new Date(selectedNotification.createdAt).toLocaleString()}</Text>
+                </View>
+
+                {selectedNotification.product && (
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailLabel}>Related Product</Text>
+                    <Card style={styles.productCard}>
                       <Card.Content>
-                        <Text style={styles.detailProductName}>{product.name}</Text>
-                        {product.batch && (
-                          <Text style={styles.detailProductInfo}>Batch: {product.batch}</Text>
-                        )}
-                        {product.expiry && (
-                          <Text style={styles.detailProductInfo}>
-                            Expiry: {new Date(product.expiry).toLocaleDateString()}
-                            {product.daysLeft && ` (${product.daysLeft} days left)`}
-                          </Text>
-                        )}
-                        {product.current && (
-                          <Text style={styles.detailProductInfo}>
-                            Current: {product.current} • Threshold: {product.threshold || product.reorderAt}
-                          </Text>
+                        <Text style={styles.productName}>{selectedNotification.product.name}</Text>
+                        <Text>Batch: {selectedNotification.product.batchNumber}</Text>
+                        {selectedNotification.product.expiryDate && (
+                          <Text>Expires: {new Date(selectedNotification.product.expiryDate).toLocaleDateString()}</Text>
                         )}
                       </Card.Content>
                     </Card>
-                  ))}
-                </View>
-              )}
+                  </View>
+                )}
 
-              {selectedNotification.details && (
-                <Text style={styles.detailExtra}>{selectedNotification.details}</Text>
-              )}
+                {selectedNotification.data && (
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailLabel}>Additional Data</Text>
+                    <Text style={styles.dataText}>{JSON.stringify(selectedNotification.data, null, 2)}</Text>
+                  </View>
+                )}
+              </Dialog.Content>
+              <Dialog.Actions>
+                <Button onPress={() => setDetailsVisible(false)}>Close</Button>
+                <Button onPress={() => handleDelete(selectedNotification.id)}>Delete</Button>
+              </Dialog.Actions>
+            </>
+          )}
+        </Dialog>
+      </Portal>
 
-              <View style={styles.detailActions}>
-                <Button 
-                  mode="contained" 
-                  onPress={() => {
-                    if (selectedNotification.type === 'expiry') {
-                      navigation.navigate('Inventory');
-                    } else if (selectedNotification.type === 'stock') {
-                      navigation.navigate('Inventory');
-                    }
-                    setDetailsVisible(false);
-                  }}
-                  style={styles.detailButton}
-                >
-                  View in Inventory
-                </Button>
-                <Button 
-                  mode="outlined" 
-                  onPress={() => {
-                    deleteNotification(selectedNotification.id);
-                    setDetailsVisible(false);
-                  }}
-                >
-                  Dismiss
-                </Button>
-              </View>
-            </Card.Content>
-          </Card>
-        </View>
-      )}
+      {/* Snackbar */}
+      <Snackbar
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={3000}
+        action={{
+          label: 'OK',
+          onPress: () => setSnackbarVisible(false),
+        }}
+      >
+        {snackbarMessage}
+      </Snackbar>
     </View>
   );
 }
@@ -663,6 +547,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666',
   },
   header: {
     flexDirection: 'row',
@@ -674,11 +568,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontSize: 24,
   },
   headerSubtitle: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666',
     marginTop: 2,
   },
@@ -702,7 +595,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   notificationCard: {
-    marginBottom: 12,
+    marginBottom: 8,
     elevation: 2,
   },
   unreadCard: {
@@ -720,6 +613,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  compactFilterContainer: {
+  maxHeight: 40,
+  marginBottom: 12,
+},
+compactFilterContent: {
+  paddingHorizontal: 16,
+  gap: 6,
+  alignItems: 'center',
+},
+compactFilterChip: {
+  height: 35,
+  marginRight: 0, // Remove margin, use gap instead
+},
+compactFilterText: {
+  fontSize: 13,
+  marginHorizontal: 8,
+},
   notificationIcon: {
     marginRight: 12,
   },
@@ -727,36 +637,30 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   notificationTitleText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
     marginBottom: 2,
   },
   notificationTime: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#666',
-  },
-  notificationActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   unreadBadge: {
     backgroundColor: '#007AFF',
+    marginLeft: 8,
   },
   notificationMessage: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#666',
-    marginBottom: 12,
+    marginBottom: 8,
     marginLeft: 52,
   },
-  productList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  productInfo: {
     marginLeft: 52,
-    marginBottom: 12,
-    gap: 8,
+    marginBottom: 8,
   },
   productChip: {
-    height: 32,
+    alignSelf: 'flex-start',
   },
   notificationFooter: {
     flexDirection: 'row',
@@ -767,12 +671,16 @@ const styles = StyleSheet.create({
   typeChip: {
     height: 28,
   },
+  footerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   emptyState: {
     alignItems: 'center',
     paddingVertical: 50,
   },
   emptyText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#666',
     marginTop: 16,
@@ -782,118 +690,47 @@ const styles = StyleSheet.create({
     color: '#999',
     marginTop: 8,
   },
-  bulkActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginVertical: 20,
-  },
-  bulkButton: {
-    flex: 1,
-    marginHorizontal: 8,
+  clearButton: {
+    marginVertical: 16,
   },
   bottomPadding: {
     height: 20,
   },
-  modalOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+  detailSection: {
+    marginBottom: 16,
   },
-  preferencesCard: {
-    width: '100%',
-    maxHeight: '80%',
-    elevation: 5,
-  },
-  detailsCard: {
-    width: '100%',
-    maxHeight: '80%',
-    elevation: 5,
-  },
-  modalHeader: {
+  detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
-  },
-  detailsTitle: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  detailIcon: {
-    marginRight: 12,
-  },
-  divider: {
-    marginVertical: 16,
-  },
-  preferenceDetail: {
-    paddingLeft: 56,
-    paddingRight: 16,
-    marginBottom: 16,
-  },
-  daysSelector: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 8,
-    gap: 8,
-  },
-  daysChip: {
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  saveButton: {
-    marginTop: 16,
-  },
-  detailMessage: {
-    fontSize: 16,
-    marginBottom: 16,
-  },
-  detailTime: {
-    fontSize: 14,
-    color: '#666',
-  },
-  detailProducts: {
-    marginTop: 16,
-  },
-  detailSubtitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
     marginBottom: 12,
   },
-  detailProductCard: {
-    marginBottom: 8,
-    elevation: 1,
+  detailLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
   },
-  detailProductName: {
+  detailValue: {
+    fontSize: 14,
+  },
+  divider: {
+    marginVertical: 12,
+  },
+  productCard: {
+    marginTop: 8,
+    backgroundColor: '#f8f8f8',
+  },
+  productName: {
     fontSize: 14,
     fontWeight: 'bold',
     marginBottom: 4,
   },
-  detailProductInfo: {
+  dataText: {
     fontSize: 12,
     color: '#666',
-    marginBottom: 2,
-  },
-  detailExtra: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 16,
-    fontStyle: 'italic',
-  },
-  detailActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 20,
-    gap: 12,
-  },
-  detailButton: {
-    flex: 1,
+    backgroundColor: '#f5f5f5',
+    padding: 8,
+    borderRadius: 4,
+    fontFamily: 'monospace',
   },
 });

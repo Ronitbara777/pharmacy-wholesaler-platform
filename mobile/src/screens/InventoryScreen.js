@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -6,206 +6,419 @@ import {
   TouchableOpacity,
   Alert,
   Modal,
-  TextInput as RNTextInput,
+  RefreshControl,
 } from 'react-native';
 import {
   Card,
   Title,
   Paragraph,
+  Text,
   Searchbar,
   Chip,
   Button,
   Divider,
-  Text,
   FAB,
   Menu,
-  Portal,
-  Dialog,
-  RadioButton,
   IconButton,
   Avatar,
   Badge,
   ActivityIndicator,
+  Portal,
+  Dialog,
+  TextInput,
 } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
+import InventoryService from '../services/inventory.service';
 
 console.log('📦 InventoryScreen loaded');
-
-// Mock data - expanded with more realistic products
-const mockProducts = [
-  { 
-    id: '1', 
-    name: 'Paracetamol 500mg', 
-    batch: 'B2024-001', 
-    expiry: '2024-12-15', 
-    quantity: 500, 
-    price: 2.5, 
-    mrp: 3.0,
-    shelf: 'A-12', 
-    rack: 'Rack 3',
-    company: 'GSK',
-    category: 'Analgesic',
-    manufacturer: 'GlaxoSmithKline',
-    createdAt: '2024-01-15',
-    lastUpdated: '2024-02-20'
-  },
-  { 
-    id: '2', 
-    name: 'Amoxicillin 250mg', 
-    batch: 'B2024-002', 
-    expiry: '2024-11-30', 
-    quantity: 300, 
-    price: 5.0, 
-    mrp: 6.5,
-    shelf: 'B-05', 
-    rack: 'Rack 1',
-    company: 'Cipla',
-    category: 'Antibiotic',
-    manufacturer: 'Cipla Ltd',
-    createdAt: '2024-01-20',
-    lastUpdated: '2024-02-18'
-  },
-  { 
-    id: '3', 
-    name: 'Vitamin C 1000mg', 
-    batch: 'B2024-003', 
-    expiry: '2024-10-20', 
-    quantity: 45, 
-    price: 8.0, 
-    mrp: 9.5,
-    shelf: 'C-08', 
-    rack: 'Rack 2',
-    company: 'Sun Pharma',
-    category: 'Vitamin',
-    manufacturer: 'Sun Pharmaceutical',
-    createdAt: '2024-02-01',
-    lastUpdated: '2024-02-19'
-  },
-  { 
-    id: '4', 
-    name: 'Cetirizine 10mg', 
-    batch: 'B2024-004', 
-    expiry: '2024-09-05', 
-    quantity: 200, 
-    price: 1.8, 
-    mrp: 2.5,
-    shelf: 'A-03', 
-    rack: 'Rack 3',
-    company: 'GSK',
-    category: 'Antihistamine',
-    manufacturer: 'GlaxoSmithKline',
-    createdAt: '2024-01-10',
-    lastUpdated: '2024-02-15'
-  },
-  { 
-    id: '5', 
-    name: 'Ibuprofen 400mg', 
-    batch: 'B2024-005', 
-    expiry: '2024-08-15', 
-    quantity: 0, 
-    price: 3.2, 
-    mrp: 4.0,
-    shelf: 'B-12', 
-    rack: 'Rack 1',
-    company: 'Cipla',
-    category: 'Anti-inflammatory',
-    manufacturer: 'Cipla Ltd',
-    createdAt: '2024-01-05',
-    lastUpdated: '2024-02-10'
-  },
-  { 
-    id: '6', 
-    name: 'Omeprazole 20mg', 
-    batch: 'B2024-006', 
-    expiry: '2025-01-20', 
-    quantity: 450, 
-    price: 4.5, 
-    mrp: 5.5,
-    shelf: 'D-01', 
-    rack: 'Rack 4',
-    company: 'Sun Pharma',
-    category: 'Antacid',
-    manufacturer: 'Sun Pharmaceutical',
-    createdAt: '2024-02-05',
-    lastUpdated: '2024-02-22'
-  },
-];
-
-// Categories for filtering
-const categories = [
-  'All',
-  'Analgesic',
-  'Antibiotic',
-  'Vitamin',
-  'Antihistamine',
-  'Anti-inflammatory',
-  'Antacid',
-];
 
 export default function InventoryScreen({ navigation }) {
   console.log('📦 InventoryScreen rendering');
   
-  // State Management
+  // State for data
+  const [products, setProducts] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  
+  // UI State
+  const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [products, setProducts] = useState(mockProducts);
-  const [loading, setLoading] = useState(false);
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
-  const [sortBy, setSortBy] = useState('name'); // 'name', 'expiry', 'quantity'
+  const [selectedWarehouse, setSelectedWarehouse] = useState('All');
+  const [sortBy, setSortBy] = useState('name');
   const [sortMenuVisible, setSortMenuVisible] = useState(false);
+  const [filterMenuVisible, setFilterMenuVisible] = useState(false);
+  
+  // Modal states
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [detailsModalVisible, setDetailsModalVisible] = useState(false);
-  const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [addEditModalVisible, setAddEditModalVisible] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  
+  // Form state for add/edit
+  const [formData, setFormData] = useState({
+    name: '',
+    batchNumber: '',
+    expiryDate: '',
+    quantity: '',
+    price: '',
+    mrp: '',
+    company: '',
+    category: '',
+    warehouseId: '',
+    shelf: '',
+    rack: '',
+    reorderLevel: '100',
+  });
 
-  // Filter products based on search and category
-  const getFilteredProducts = () => {
-    let filtered = [...products];
+  // Pagination
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalProducts, setTotalProducts] = useState(0);
+  const limit = 10;
 
-    // Apply search filter
-    if (searchQuery) {
-      filtered = filtered.filter(p => 
-        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.batch.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.category.toLowerCase().includes(searchQuery.toLowerCase())
-      );
+  // Load initial data
+  useEffect(() => {
+    loadInitialData();
+  }, []);
+
+  // Load data when filters change
+  useEffect(() => {
+    if (!loading) {
+      loadProducts();
     }
+  }, [page, selectedCategory, selectedWarehouse, searchQuery, sortBy]);
 
-    // Apply category filter
-    if (selectedCategory !== 'All') {
-      filtered = filtered.filter(p => p.category === selectedCategory);
+  const loadInitialData = async () => {
+    try {
+      setLoading(true);
+      
+      // Load warehouses and categories in parallel
+      const [warehousesRes, categoriesRes] = await Promise.all([
+        InventoryService.getWarehouses(),
+        InventoryService.getCategories(),
+      ]);
+
+      if (warehousesRes?.success) {
+        setWarehouses(warehousesRes.data);
+      }
+
+      if (categoriesRes?.success) {
+        setCategories(['All', ...categoriesRes.data]);
+      }
+
+      // Load products
+      await loadProducts();
+
+    } catch (error) {
+      console.error('Error loading initial data:', error);
+      Alert.alert('Error', 'Failed to load inventory data');
+    } finally {
+      setLoading(false);
     }
+  };
 
-    // Apply sorting
-    filtered.sort((a, b) => {
-      if (sortBy === 'name') return a.name.localeCompare(b.name);
-      if (sortBy === 'expiry') return new Date(a.expiry) - new Date(b.expiry);
-      if (sortBy === 'quantity') return a.quantity - b.quantity;
-      return 0;
+  const loadProducts = async () => {
+  try {
+    console.log('📦 ===== LOADING PRODUCTS =====');
+    console.log('📦 Current filters:', {
+      page,
+      limit,
+      search: searchQuery,
+      category: selectedCategory,
+      warehouse: selectedWarehouse,
+      sortBy
     });
 
-    return filtered;
+    const params = {
+      page,
+      limit,
+      sortBy,
+      sortOrder: 'asc',
+    };
+
+    // Only add params if they have values
+    if (searchQuery && searchQuery.trim() !== '') {
+      params.search = searchQuery.trim();
+    }
+
+    if (selectedCategory && selectedCategory !== 'All') {
+      params.category = selectedCategory;
+    }
+
+    if (selectedWarehouse && selectedWarehouse !== 'All') {
+      params.warehouseId = selectedWarehouse;
+    }
+
+    console.log('📦 Request params:', params);
+
+    const response = await InventoryService.getProducts(params);
+    
+    console.log('📦 Full API Response:', JSON.stringify(response, null, 2));
+
+    if (response && response.success) {
+      console.log('📦 Products data:', response.data);
+      console.log('📦 Number of products:', response.data?.length || 0);
+      console.log('📦 Pagination:', response.pagination);
+      
+      if (response.data && response.data.length > 0) {
+        console.log('📦 First product:', response.data[0]);
+        setProducts(response.data);
+      } else {
+        console.log('📦 No products returned from API');
+        setProducts([]);
+      }
+      
+      setTotalPages(response.pagination?.pages || 1);
+      setTotalProducts(response.pagination?.total || 0);
+    } else {
+      console.log('📦 API response not successful:', response);
+      setProducts([]);
+    }
+  } catch (error) {
+    console.error('❌ Error loading products:', error);
+    console.error('❌ Error details:', error.response?.data || error.message);
+    Alert.alert('Error', 'Failed to load products');
+  } finally {
+    console.log('📦 ===== LOADING COMPLETE =====');
+  }
+};
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    setPage(1);
+    await loadProducts();
+    setRefreshing(false);
   };
 
-  const filteredProducts = getFilteredProducts();
-
-  // Calculate stats
-  const stats = {
-    total: products.length,
-    totalQuantity: products.reduce((sum, p) => sum + p.quantity, 0),
-    lowStock: products.filter(p => p.quantity > 0 && p.quantity < 100).length,
-    outOfStock: products.filter(p => p.quantity === 0).length,
-    expiringSoon: products.filter(p => {
-      const expiry = new Date(p.expiry);
-      const threeMonthsLater = new Date();
-      threeMonthsLater.setMonth(threeMonthsLater.getMonth() + 3);
-      return expiry <= threeMonthsLater && expiry > new Date();
-    }).length,
-    expired: products.filter(p => new Date(p.expiry) < new Date()).length,
-    totalValue: products.reduce((sum, p) => sum + (p.price * p.quantity), 0),
+  const handleSearch = (query) => {
+    setSearchQuery(query);
+    setPage(1); // Reset to first page on new search
   };
 
-  // Helper function for expiry status
+  const handleCategoryFilter = (category) => {
+    setSelectedCategory(category);
+    setPage(1);
+    setFilterMenuVisible(false);
+  };
+
+  const handleWarehouseFilter = (warehouseId) => {
+    setSelectedWarehouse(warehouseId);
+    setPage(1);
+  };
+
+  const handleSort = (sortType) => {
+    setSortBy(sortType);
+    setSortMenuVisible(false);
+  };
+
+  const handleViewDetails = (product) => {
+    setSelectedProduct(product);
+    setDetailsModalVisible(true);
+  };
+
+  const handleAddProduct = () => {
+    setIsEditing(false);
+    setFormData({
+      name: '',
+      batchNumber: '',
+      expiryDate: '',
+      quantity: '',
+      price: '',
+      mrp: '',
+      company: '',
+      category: '',
+      warehouseId: warehouses[0]?.id || '',
+      shelf: '',
+      rack: '',
+      reorderLevel: '100',
+    });
+    setAddEditModalVisible(true);
+  };
+
+  const handleEditProduct = (product) => {
+  console.log('✏️ EDIT - Product clicked:', product);
+  console.log('✏️ EDIT - Product ID:', product.id);
+  console.log('✏️ EDIT - Product data:', JSON.stringify(product, null, 2));
+  
+  setIsEditing(true);
+  setSelectedProduct(product);
+  setFormData({
+    name: product.name || '',
+    batchNumber: product.batchNumber || '',
+    expiryDate: product.expiryDate ? new Date(product.expiryDate).toISOString().split('T')[0] : '',
+    quantity: product.quantity?.toString() || '',
+    price: product.price?.toString() || '',
+    mrp: product.mrp?.toString() || '',
+    company: product.company || '',
+    category: product.category || '',
+    warehouseId: product.warehouseId || '',
+    shelf: product.shelf || '',
+    rack: product.rack || '',
+    reorderLevel: product.reorderLevel?.toString() || '100',
+  });
+  setAddEditModalVisible(true);
+};
+
+  const handleDeleteProduct = (product) => {
+  console.log('🗑️ DELETE - Attempting to delete:', product);
+  console.log('🗑️ DELETE - Product ID:', product.id);
+  
+  Alert.alert(
+    'Delete Product',
+    `Are you sure you want to delete ${product.name}?`,
+    [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            console.log('🗑️ DELETE - Sending delete request for ID:', product.id);
+            
+            const response = await InventoryService.deleteProduct(product.id);
+            
+            console.log('🗑️ DELETE - Response:', response);
+            
+            if (response && response.success) {
+              console.log('🗑️ DELETE - Success, reloading products...');
+              Alert.alert('Success', 'Product deleted successfully');
+              
+              // Reload products
+              await loadProducts();
+              
+              // Log the new state
+              console.log('🗑️ DELETE - Products after reload:', products.length);
+            } else {
+              console.log('🗑️ DELETE - Failed:', response);
+              Alert.alert('Error', response?.message || 'Failed to delete product');
+            }
+          } catch (error) {
+            console.error('❌ DELETE - Error:', error);
+            console.error('❌ DELETE - Error response:', error.response?.data);
+            console.error('❌ DELETE - Error status:', error.response?.status);
+            Alert.alert('Error', 'Failed to delete product');
+          }
+        }
+      }
+    ]
+  );
+};
+
+  const handleSaveProduct = async () => {
+  console.log('💾 SAVE - Starting save operation');
+  console.log('💾 SAVE - Is editing:', isEditing);
+  console.log('💾 SAVE - Form data:', formData);
+  
+  // Validate required fields
+  const requiredFields = [
+    { field: 'name', label: 'Product Name' },
+    { field: 'batchNumber', label: 'Batch Number' },
+    { field: 'expiryDate', label: 'Expiry Date' },
+    { field: 'quantity', label: 'Quantity' },
+    { field: 'company', label: 'Company' },
+    { field: 'warehouseId', label: 'Warehouse' },
+  ];
+
+  const missingFields = requiredFields.filter(f => !formData[f.field]);
+  
+  if (missingFields.length > 0) {
+    const fieldNames = missingFields.map(f => f.label).join(', ');
+    Alert.alert('Error', `Please fill required fields: ${fieldNames}`);
+    return;
+  }
+
+  // Validate expiry date format
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (!dateRegex.test(formData.expiryDate)) {
+    Alert.alert('Error', 'Expiry date must be in YYYY-MM-DD format');
+    return;
+  }
+
+  // Validate quantity is a number
+  if (isNaN(parseInt(formData.quantity)) || parseInt(formData.quantity) < 0) {
+    Alert.alert('Error', 'Quantity must be a valid positive number');
+    return;
+  }
+
+  try {
+    setLoading(true);
+    
+    const productData = {
+      name: formData.name.trim(),
+      batchNumber: formData.batchNumber.trim(),
+      expiryDate: formData.expiryDate,
+      quantity: parseInt(formData.quantity),
+      price: parseFloat(formData.price) || 0,
+      mrp: parseFloat(formData.mrp) || null,
+      company: formData.company.trim(),
+      category: formData.category.trim() || null,
+      warehouseId: formData.warehouseId,
+      shelf: formData.shelf.trim() || null,
+      rack: formData.rack.trim() || null,
+      reorderLevel: parseInt(formData.reorderLevel) || 100,
+    };
+
+    console.log('💾 SAVE - Product data to send:', productData);
+
+    let response;
+    if (isEditing) {
+      console.log('💾 SAVE - Updating product ID:', selectedProduct.id);
+      response = await InventoryService.updateProduct(selectedProduct.id, productData);
+    } else {
+      console.log('💾 SAVE - Creating new product');
+      response = await InventoryService.createProduct(productData);
+    }
+
+    console.log('💾 SAVE - Response:', response);
+
+    if (response && response.success) {
+      Alert.alert('Success', `Product ${isEditing ? 'updated' : 'created'} successfully`);
+      setAddEditModalVisible(false);
+      
+      // Reset form
+      setFormData({
+        name: '',
+        batchNumber: '',
+        expiryDate: '',
+        quantity: '',
+        price: '',
+        mrp: '',
+        company: '',
+        category: '',
+        warehouseId: warehouses[0]?.id || '',
+        shelf: '',
+        rack: '',
+        reorderLevel: '100',
+      });
+      
+      // Reload products
+      console.log('💾 SAVE - Reloading products...');
+      await loadProducts();
+      console.log('💾 SAVE - Products reloaded');
+      
+    } else {
+      console.log('💾 SAVE - Failed:', response);
+      Alert.alert('Error', response?.message || 'Failed to save product');
+    }
+  } catch (error) {
+    console.error('❌ SAVE - Error:', error);
+    console.error('❌ SAVE - Error response:', error.response?.data);
+    console.error('❌ SAVE - Error status:', error.response?.status);
+    
+    if (error.errors) {
+      const errorMessages = error.errors.map(e => `${e.path}: ${e.msg}`).join('\n');
+      Alert.alert('Validation Error', errorMessages);
+    } else {
+      Alert.alert('Error', `Failed to ${isEditing ? 'update' : 'create'} product`);
+    }
+  } finally {
+    setLoading(false);
+  }
+};
+
   const getExpiryStatus = (expiryDate) => {
     const today = new Date();
     const expiry = new Date(expiryDate);
@@ -217,44 +430,9 @@ export default function InventoryScreen({ navigation }) {
     return { label: 'Good', color: '#4CAF50', icon: 'checkmark-circle' };
   };
 
-  // Handle product actions
-  const handleEditProduct = (product) => {
-    Alert.alert('Edit Product', `Edit ${product.name}`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'OK', onPress: () => console.log('Edit product:', product.id) }
-    ]);
-  };
-
-  const handleDeleteProduct = (product) => {
-    Alert.alert(
-      'Delete Product',
-      `Are you sure you want to delete ${product.name}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          onPress: () => {
-            setProducts(products.filter(p => p.id !== product.id));
-            Alert.alert('Success', 'Product deleted successfully');
-          },
-          style: 'destructive'
-        }
-      ]
-    );
-  };
-
-  const handleViewDetails = (product) => {
-    setSelectedProduct(product);
-    setDetailsModalVisible(true);
-  };
-
-  const handleAddProduct = () => {
-    Alert.alert('Add Product', 'Open add product form');
-  };
-
-  // Render product card based on view mode
   const renderProductCard = (product) => {
-    const expiryStatus = getExpiryStatus(product.expiry);
+    const expiryStatus = getExpiryStatus(product.expiryDate);
+    const warehouse = warehouses.find(w => w.id === product.warehouseId);
     
     if (viewMode === 'grid') {
       return (
@@ -296,12 +474,18 @@ export default function InventoryScreen({ navigation }) {
               <View style={styles.gridDetails}>
                 <View style={styles.gridDetailRow}>
                   <Ionicons name="cube-outline" size={14} color="#666" />
-                  <Text style={styles.gridDetailText}>Batch: {product.batch}</Text>
+                  <Text style={styles.gridDetailText}>Batch: {product.batchNumber}</Text>
                 </View>
                 <View style={styles.gridDetailRow}>
                   <Ionicons name="calendar-outline" size={14} color="#666" />
                   <Text style={styles.gridDetailText}>
-                    {new Date(product.expiry).toLocaleDateString()}
+                    {new Date(product.expiryDate).toLocaleDateString()}
+                  </Text>
+                </View>
+                <View style={styles.gridDetailRow}>
+                  <Ionicons name="location-outline" size={14} color="#666" />
+                  <Text style={styles.gridDetailText}>
+                    {warehouse?.name || 'Unknown'}
                   </Text>
                 </View>
               </View>
@@ -316,7 +500,7 @@ export default function InventoryScreen({ navigation }) {
                   <Text style={[
                     styles.gridQuantity,
                     product.quantity === 0 ? styles.textOutOfStock :
-                    product.quantity < 100 ? styles.textLowStock : null
+                    product.quantity < (product.reorderLevel || 100) ? styles.textLowStock : null
                   ]}>
                     {product.quantity}
                   </Text>
@@ -327,9 +511,8 @@ export default function InventoryScreen({ navigation }) {
         </TouchableOpacity>
       );
     } else {
-      // List view
       return (
-        <Card key={product.id} style={styles.listCard} mode="elevated">
+        <Card key={product.id} style={styles.listCard}>
           <Card.Content>
             <View style={styles.listHeader}>
               <View style={styles.listTitleSection}>
@@ -349,23 +532,19 @@ export default function InventoryScreen({ navigation }) {
             <View style={styles.listDetails}>
               <View style={styles.listDetailRow}>
                 <Ionicons name="cube-outline" size={16} color="#666" />
-                <Text style={styles.listDetailText}>Batch: {product.batch}</Text>
+                <Text style={styles.listDetailText}>Batch: {product.batchNumber}</Text>
               </View>
               <View style={styles.listDetailRow}>
                 <Ionicons name="calendar-outline" size={16} color="#666" />
                 <Text style={styles.listDetailText}>
-                  Expires: {new Date(product.expiry).toLocaleDateString()}
+                  Expires: {new Date(product.expiryDate).toLocaleDateString()}
                 </Text>
               </View>
               <View style={styles.listDetailRow}>
                 <Ionicons name="location-outline" size={16} color="#666" />
                 <Text style={styles.listDetailText}>
-                  Shelf: {product.shelf} • Rack: {product.rack}
+                  {warehouse?.name || 'Unknown'} • {product.shelf || 'No shelf'}
                 </Text>
-              </View>
-              <View style={styles.listDetailRow}>
-                <Ionicons name="pricetag-outline" size={16} color="#666" />
-                <Text style={styles.listDetailText}>Category: {product.category}</Text>
               </View>
             </View>
 
@@ -375,14 +554,16 @@ export default function InventoryScreen({ navigation }) {
               <View>
                 <Text style={styles.listPriceLabel}>Price</Text>
                 <Text style={styles.listPrice}>₹{product.price}</Text>
-                <Text style={styles.listMrp}>MRP: ₹{product.mrp}</Text>
+                {product.mrp && (
+                  <Text style={styles.listMrp}>MRP: ₹{product.mrp}</Text>
+                )}
               </View>
               <View style={styles.listQuantitySection}>
                 <Text style={styles.listQuantityLabel}>Quantity</Text>
                 <Text style={[
                   styles.listQuantity,
                   product.quantity === 0 ? styles.textOutOfStock :
-                  product.quantity < 100 ? styles.textLowStock : null
+                  product.quantity < (product.reorderLevel || 100) ? styles.textLowStock : null
                 ]}>
                   {product.quantity}
                 </Text>
@@ -411,20 +592,43 @@ export default function InventoryScreen({ navigation }) {
     }
   };
 
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={styles.loadingText}>Loading inventory...</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <View>
           <Title style={styles.headerTitle}>Inventory</Title>
-          <Text style={styles.headerSubtitle}>{stats.total} products • ₹{stats.totalValue.toFixed(2)} value</Text>
+          <Text style={styles.headerSubtitle}>
+            {totalProducts} products • Page {page}/{totalPages}
+          </Text>
+                  <IconButton
+          icon="refresh"
+          size={24}
+          onPress={() => {
+            setSelectedCategory('All');
+            setSelectedWarehouse('All');
+            setSearchQuery('');
+            setPage(1);
+            loadProducts();
+          }}
+        />
         </View>
         <View style={styles.headerActions}>
           <IconButton
-            icon={viewMode === 'grid' ? 'view-grid' : 'view-list'}
+            icon={viewMode === 'grid' ? 'view-list' : 'view-grid'}
             size={24}
             onPress={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
           />
+          
           <Menu
             visible={sortMenuVisible}
             onDismiss={() => setSortMenuVisible(false)}
@@ -436,255 +640,323 @@ export default function InventoryScreen({ navigation }) {
               />
             }
           >
+            // Add this in the header actions next to other icons
+
             <Menu.Item 
-              onPress={() => { setSortBy('name'); setSortMenuVisible(false); }} 
+              onPress={() => handleSort('name')} 
               title="Sort by Name" 
               leadingIcon="sort-alphabetical-ascending"
             />
             <Menu.Item 
-              onPress={() => { setSortBy('expiry'); setSortMenuVisible(false); }} 
+              onPress={() => handleSort('expiryDate')} 
               title="Sort by Expiry" 
               leadingIcon="calendar"
             />
             <Menu.Item 
-              onPress={() => { setSortBy('quantity'); setSortMenuVisible(false); }} 
+              onPress={() => handleSort('quantity')} 
               title="Sort by Quantity" 
               leadingIcon="sort-numeric-ascending"
+            />
+            <Menu.Item 
+              onPress={() => handleSort('price')} 
+              title="Sort by Price" 
+              leadingIcon="currency-inr"
             />
           </Menu>
           <IconButton
             icon="filter"
             size={24}
-            onPress={() => setFilterModalVisible(true)}
+            onPress={() => setFilterMenuVisible(true)}
           />
+          
         </View>
       </View>
 
       {/* Search Bar */}
       <Searchbar
         placeholder="Search products, batch, company..."
-        onChangeText={setSearchQuery}
+        onChangeText={handleSearch}
         value={searchQuery}
         style={styles.searchbar}
-        inputStyle={styles.searchInput}
       />
 
-      {/* Categories */}
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        style={styles.categoriesContainer}
-        contentContainerStyle={styles.categoriesContent}
-      >
-        {categories.map((category) => (
-          <Chip
-            key={category}
-            selected={selectedCategory === category}
-            onPress={() => setSelectedCategory(category)}
-            style={styles.categoryChip}
-            mode={selectedCategory === category ? 'flat' : 'outlined'}
-            selectedColor="#007AFF"
-          >
-            {category}
-          </Chip>
-        ))}
-      </ScrollView>
+      {/* Filter Chips */}
+     
 
-      {/* Stats Cards */}
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        style={styles.statsContainer}
-        contentContainerStyle={styles.statsContent}
-      >
-        <Card style={styles.statCard}>
-          <Card.Content>
-            <Paragraph>Total Items</Paragraph>
-            <Title>{stats.total}</Title>
-          </Card.Content>
-        </Card>
-        <Card style={styles.statCard}>
-          <Card.Content>
-            <Paragraph>Total Qty</Paragraph>
-            <Title>{stats.totalQuantity}</Title>
-          </Card.Content>
-        </Card>
-        <Card style={[styles.statCard, { backgroundColor: '#FFF3E0' }]}>
-          <Card.Content>
-            <Paragraph>Low Stock</Paragraph>
-            <Title style={{ color: '#FF9800' }}>{stats.lowStock}</Title>
-          </Card.Content>
-        </Card>
-        <Card style={[styles.statCard, { backgroundColor: '#FFEBEE' }]}>
-          <Card.Content>
-            <Paragraph>Expiring</Paragraph>
-            <Title style={{ color: '#F44336' }}>{stats.expiringSoon}</Title>
-          </Card.Content>
-        </Card>
-        <Card style={[styles.statCard, { backgroundColor: '#E8F5E9' }]}>
-          <Card.Content>
-            <Paragraph>Total Value</Paragraph>
-            <Title style={{ fontSize: 18 }}>₹{stats.totalValue.toFixed(0)}</Title>
-          </Card.Content>
-        </Card>
-      </ScrollView>
+      {/* Warehouse Filter */}
+      
 
       {/* Product List/Grid */}
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#007AFF" />
-          <Text>Loading products...</Text>
-        </View>
-      ) : (
-        <ScrollView style={styles.productList}>
-          {filteredProducts.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="cube-outline" size={64} color="#ccc" />
-              <Text style={styles.emptyText}>No products found</Text>
-              <Button mode="contained" onPress={handleAddProduct} style={styles.emptyButton}>
-                Add Product
-              </Button>
-            </View>
-          ) : (
-            <View style={viewMode === 'grid' ? styles.gridContainer : styles.listContainer}>
-              {filteredProducts.map(product => renderProductCard(product))}
-            </View>
-          )}
-        </ScrollView>
-      )}
+      <ScrollView
+        style={styles.productList}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
+        {products.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="cube-outline" size={64} color="#ccc" />
+            <Text style={styles.emptyText}>No products found</Text>
+            <Button mode="contained" onPress={handleAddProduct}>
+              Add Product
+            </Button>
+          </View>
+        ) : (
+          <View style={viewMode === 'grid' ? styles.gridContainer : styles.listContainer}>
+            {products.map(product => renderProductCard(product))}
+          </View>
+        )}
 
-      {/* FAB for adding products */}
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <View style={styles.pagination}>
+            <Button
+              disabled={page === 1}
+              onPress={() => setPage(p => Math.max(1, p - 1))}
+            >
+              Previous
+            </Button>
+            <Text style={styles.pageText}>{page} / {totalPages}</Text>
+            <Button
+              disabled={page === totalPages}
+              onPress={() => setPage(p => Math.min(totalPages, p + 1))}
+            >
+              Next
+            </Button>
+          </View>
+        )}
+      </ScrollView>
+
+      {/* FAB */}
       <FAB
         style={styles.fab}
         icon="plus"
         onPress={handleAddProduct}
-        label="Add"
+        label="Add Product"
       />
-
-      {/* Product Details Modal */}
-      <Portal>
-        <Modal
-          visible={detailsModalVisible}
-          onDismiss={() => setDetailsModalVisible(false)}
-          contentContainerStyle={styles.modalContainer}
-        >
-          {selectedProduct && (
-            <ScrollView>
-              <View style={styles.modalHeader}>
-                <Avatar.Icon size={60} icon="pill" style={styles.modalIcon} />
-                <View style={styles.modalTitleSection}>
-                  <Title>{selectedProduct.name}</Title>
-                  <Paragraph>{selectedProduct.company}</Paragraph>
-                </View>
-                <IconButton
-                  icon="close"
-                  size={24}
-                  onPress={() => setDetailsModalVisible(false)}
-                />
-              </View>
-
-              <Divider />
-
-              <View style={styles.modalContent}>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Batch Number</Text>
-                  <Text style={styles.modalValue}>{selectedProduct.batch}</Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Category</Text>
-                  <Text style={styles.modalValue}>{selectedProduct.category}</Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Manufacturer</Text>
-                  <Text style={styles.modalValue}>{selectedProduct.manufacturer}</Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Expiry Date</Text>
-                  <Text style={styles.modalValue}>
-                    {new Date(selectedProduct.expiry).toLocaleDateString()}
-                  </Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Quantity</Text>
-                  <Text style={[
-                    styles.modalValue,
-                    selectedProduct.quantity === 0 ? styles.textOutOfStock : null
-                  ]}>
-                    {selectedProduct.quantity}
-                  </Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Price (₹)</Text>
-                  <Text style={styles.modalValue}>{selectedProduct.price}</Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>MRP (₹)</Text>
-                  <Text style={styles.modalValue}>{selectedProduct.mrp}</Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Location</Text>
-                  <Text style={styles.modalValue}>
-                    Shelf {selectedProduct.shelf}, {selectedProduct.rack}
-                  </Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Added On</Text>
-                  <Text style={styles.modalValue}>
-                    {new Date(selectedProduct.createdAt).toLocaleDateString()}
-                  </Text>
-                </View>
-                <View style={styles.modalRow}>
-                  <Text style={styles.modalLabel}>Last Updated</Text>
-                  <Text style={styles.modalValue}>
-                    {new Date(selectedProduct.lastUpdated).toLocaleDateString()}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.modalActions}>
-                <Button 
-                  mode="contained" 
-                  onPress={() => {
-                    setDetailsModalVisible(false);
-                    handleEditProduct(selectedProduct);
-                  }}
-                  style={styles.modalButton}
-                >
-                  Edit
-                </Button>
-                <Button 
-                  mode="outlined" 
-                  onPress={() => setDetailsModalVisible(false)}
-                  style={styles.modalButton}
-                >
-                  Close
-                </Button>
-              </View>
-            </ScrollView>
-          )}
-        </Modal>
-      </Portal>
 
       {/* Filter Modal */}
       <Portal>
-        <Dialog visible={filterModalVisible} onDismiss={() => setFilterModalVisible(false)}>
+        <Dialog visible={filterMenuVisible} onDismiss={() => setFilterMenuVisible(false)}>
           <Dialog.Title>Filter Products</Dialog.Title>
           <Dialog.Content>
-            <RadioButton.Group onValueChange={setSelectedCategory} value={selectedCategory}>
+            <Text style={styles.filterLabel}>Category</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {categories.map(category => (
-                <RadioButton.Item key={category} label={category} value={category} />
+                <Chip
+                  key={category}
+                  selected={selectedCategory === category}
+                  onPress={() => handleCategoryFilter(category)}
+                  style={styles.filterChip}
+                >
+                  {category}
+                </Chip>
               ))}
-            </RadioButton.Group>
+            </ScrollView>
+
+            <Text style={[styles.filterLabel, { marginTop: 16 }]}>Warehouse</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <Chip
+                selected={selectedWarehouse === 'All'}
+                onPress={() => handleWarehouseFilter('All')}
+                style={styles.filterChip}
+              >
+                All
+              </Chip>
+              {warehouses.map(warehouse => (
+                <Chip
+                  key={warehouse.id}
+                  selected={selectedWarehouse === warehouse.id}
+                  onPress={() => handleWarehouseFilter(warehouse.id)}
+                  style={styles.filterChip}
+                >
+                  {warehouse.name}
+                </Chip>
+              ))}
+            </ScrollView>
           </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={() => {
-              setSelectedCategory('All');
-              setFilterModalVisible(false);
-            }}>Reset</Button>
-            <Button onPress={() => setFilterModalVisible(false)}>Apply</Button>
+            <Button onPress={() => setFilterMenuVisible(false)}>Apply</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>
+
+      {/* Product Details Modal */}
+      <Portal>
+        <Dialog visible={detailsModalVisible} onDismiss={() => setDetailsModalVisible(false)}>
+          {selectedProduct && (
+            <>
+              <Dialog.Title>{selectedProduct.name}</Dialog.Title>
+              <Dialog.Content>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Batch Number:</Text>
+                  <Text>{selectedProduct.batchNumber}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Expiry Date:</Text>
+                  <Text>{new Date(selectedProduct.expiryDate).toLocaleDateString()}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Quantity:</Text>
+                  <Text>{selectedProduct.quantity}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Price:</Text>
+                  <Text>₹{selectedProduct.price}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>MRP:</Text>
+                  <Text>₹{selectedProduct.mrp || 'N/A'}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Company:</Text>
+                  <Text>{selectedProduct.company}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Category:</Text>
+                  <Text>{selectedProduct.category || 'N/A'}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Location:</Text>
+                  <Text>
+                    {warehouses.find(w => w.id === selectedProduct.warehouseId)?.name} 
+                    {selectedProduct.shelf && ` • Shelf ${selectedProduct.shelf}`}
+                  </Text>
+                </View>
+              </Dialog.Content>
+              <Dialog.Actions>
+                <Button onPress={() => setDetailsModalVisible(false)}>Close</Button>
+                <Button onPress={() => {
+                  setDetailsModalVisible(false);
+                  handleEditProduct(selectedProduct);
+                }}>Edit</Button>
+              </Dialog.Actions>
+            </>
+          )}
+        </Dialog>
+      </Portal>
+
+      {/* Add/Edit Product Modal */}
+      {/* Add/Edit Product Modal */}
+<Portal>
+  <Dialog visible={addEditModalVisible} onDismiss={() => setAddEditModalVisible(false)}>
+    <Dialog.Title>{isEditing ? 'Edit Product' : 'Add Product'}</Dialog.Title>
+    <Dialog.Content>
+      <ScrollView style={styles.formContainer}>
+        <TextInput
+          label="Product Name *"
+          value={formData.name}
+          onChangeText={text => setFormData({...formData, name: text})}
+          mode="outlined"
+          style={styles.formInput}
+          error={!formData.name}
+        />
+        <TextInput
+          label="Batch Number *"
+          value={formData.batchNumber}
+          onChangeText={text => setFormData({...formData, batchNumber: text})}
+          mode="outlined"
+          style={styles.formInput}
+          error={!formData.batchNumber}
+        />
+        <TextInput
+          label="Expiry Date (YYYY-MM-DD) *"
+          value={formData.expiryDate}
+          onChangeText={text => setFormData({...formData, expiryDate: text})}
+          mode="outlined"
+          style={styles.formInput}
+          placeholder="2024-12-31"
+          error={!formData.expiryDate}
+        />
+        <TextInput
+          label="Quantity *"
+          value={formData.quantity}
+          onChangeText={text => setFormData({...formData, quantity: text})}
+          mode="outlined"
+          keyboardType="numeric"
+          style={styles.formInput}
+          error={!formData.quantity}
+        />
+        <TextInput
+          label="Company *"
+          value={formData.company}
+          onChangeText={text => setFormData({...formData, company: text})}
+          mode="outlined"
+          style={styles.formInput}
+          error={!formData.company}
+        />
+        <TextInput
+          label="Price (₹)"
+          value={formData.price}
+          onChangeText={text => setFormData({...formData, price: text})}
+          mode="outlined"
+          keyboardType="numeric"
+          style={styles.formInput}
+        />
+        <TextInput
+          label="MRP (₹)"
+          value={formData.mrp}
+          onChangeText={text => setFormData({...formData, mrp: text})}
+          mode="outlined"
+          keyboardType="numeric"
+          style={styles.formInput}
+        />
+        <TextInput
+          label="Category"
+          value={formData.category}
+          onChangeText={text => setFormData({...formData, category: text})}
+          mode="outlined"
+          style={styles.formInput}
+        />
+        
+        {/* Warehouse Picker */}
+        <Text style={styles.pickerLabel}>Warehouse *</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pickerContainer}>
+          {warehouses.map(warehouse => (
+            <Chip
+              key={warehouse.id}
+              selected={formData.warehouseId === warehouse.id}
+              onPress={() => setFormData({...formData, warehouseId: warehouse.id})}
+              style={styles.pickerChip}
+              mode={formData.warehouseId === warehouse.id ? 'flat' : 'outlined'}
+            >
+              {warehouse.name}
+            </Chip>
+          ))}
+        </ScrollView>
+
+        <TextInput
+          label="Shelf"
+          value={formData.shelf}
+          onChangeText={text => setFormData({...formData, shelf: text})}
+          mode="outlined"
+          style={styles.formInput}
+        />
+        <TextInput
+          label="Rack"
+          value={formData.rack}
+          onChangeText={text => setFormData({...formData, rack: text})}
+          mode="outlined"
+          style={styles.formInput}
+        />
+        <TextInput
+          label="Reorder Level"
+          value={formData.reorderLevel}
+          onChangeText={text => setFormData({...formData, reorderLevel: text})}
+          mode="outlined"
+          keyboardType="numeric"
+          style={styles.formInput}
+        />
+        
+        <Text style={styles.requiredNote}>* Required fields</Text>
+      </ScrollView>
+    </Dialog.Content>
+    <Dialog.Actions>
+      <Button onPress={() => setAddEditModalVisible(false)}>Cancel</Button>
+      <Button onPress={handleSaveProduct}>Save</Button>
+    </Dialog.Actions>
+  </Dialog>
+</Portal>
     </View>
   );
 }
@@ -693,6 +965,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666',
   },
   header: {
     flexDirection: 'row',
@@ -704,53 +986,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontSize: 24,
   },
   headerSubtitle: {
     fontSize: 12,
     color: '#666',
-    marginTop: 2,
   },
   headerActions: {
     flexDirection: 'row',
-    alignItems: 'center',
   },
   searchbar: {
     margin: 16,
     marginTop: 8,
     elevation: 2,
-    borderRadius: 10,
   },
-  searchInput: {
-    fontSize: 14,
-  },
-  categoriesContainer: {
-    maxHeight: 50,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  categoriesContent: {
+  chipContainer: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    marginBottom: 8,
   },
-  categoryChip: {
+  chip: {
     marginRight: 8,
-  },
-  statsContainer: {
-    backgroundColor: '#fff',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  statsContent: {
-    paddingHorizontal: 16,
-  },
-  statCard: {
-    width: 120,
-    marginRight: 12,
-    elevation: 2,
   },
   productList: {
     flex: 1,
@@ -759,14 +1014,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     padding: 8,
-    justifyContent: 'space-between',
   },
   gridCard: {
     width: '48%',
-    marginBottom: 12,
+    margin: '1%',
   },
   gridCardInner: {
-    elevation: 3,
+    elevation: 2,
   },
   gridHeader: {
     flexDirection: 'row',
@@ -778,7 +1032,6 @@ const styles = StyleSheet.create({
   },
   outOfStockBadge: {
     backgroundColor: '#F44336',
-    color: '#fff',
   },
   productIcon: {
     alignSelf: 'center',
@@ -816,8 +1069,6 @@ const styles = StyleSheet.create({
   gridFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 4,
   },
   gridPriceLabel: {
     fontSize: 10,
@@ -839,20 +1090,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  
-  // List view styles
   listContainer: {
-    padding: 16,
+    padding: 8,
   },
   listCard: {
-    marginBottom: 12,
+    marginBottom: 8,
     elevation: 2,
   },
   listHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   listTitleSection: {
     flex: 1,
@@ -862,28 +1110,27 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   listCompany: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#666',
-    marginTop: 2,
   },
   statusChip: {
     height: 32,
   },
   listDetails: {
-    marginBottom: 12,
+    marginBottom: 8,
   },
   listDetailRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   listDetailText: {
     marginLeft: 8,
     fontSize: 14,
-    color: '#444',
+    color: '#666',
   },
   listDivider: {
-    marginVertical: 12,
+    marginVertical: 8,
   },
   listFooter: {
     flexDirection: 'row',
@@ -900,7 +1147,7 @@ const styles = StyleSheet.create({
     color: '#007AFF',
   },
   listMrp: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#999',
   },
   listQuantitySection: {
@@ -911,97 +1158,82 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   listQuantity: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
   },
   listActions: {
     flexDirection: 'row',
   },
-  
-  // Utility styles
   textLowStock: {
     color: '#FF9800',
   },
   textOutOfStock: {
     color: '#F44336',
   },
-  
-  // Loading and empty states
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 50,
+    padding: 50,
   },
   emptyText: {
     fontSize: 16,
     color: '#999',
-    marginTop: 16,
-    marginBottom: 16,
+    marginVertical: 16,
   },
-  emptyButton: {
-    borderRadius: 8,
-  },
-  
-  // FAB
   fab: {
     position: 'absolute',
     margin: 16,
     right: 0,
     bottom: 0,
-    backgroundColor: '#007AFF',
   },
-  
-  // Modal styles
-  modalContainer: {
-    backgroundColor: 'white',
-    margin: 20,
-    borderRadius: 12,
-    maxHeight: '80%',
-  },
-  modalHeader: {
+  pagination: {
     flexDirection: 'row',
-    padding: 20,
+    justifyContent: 'center',
     alignItems: 'center',
+    padding: 16,
   },
-  modalIcon: {
-    backgroundColor: '#007AFF',
-    marginRight: 16,
+  pageText: {
+    marginHorizontal: 16,
   },
-  modalTitleSection: {
-    flex: 1,
+  filterLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 8,
   },
-  modalContent: {
-    padding: 20,
+  filterChip: {
+    marginRight: 8,
   },
-  modalRow: {
+  formContainer: {
+    maxHeight: 400,
+  },
+  formInput: {
+    marginBottom: 12,
+  },
+  detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    marginBottom: 8,
   },
-  modalLabel: {
-    fontSize: 14,
+  detailLabel: {
+    fontWeight: 'bold',
     color: '#666',
   },
-  modalValue: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    padding: 20,
-    paddingTop: 0,
-  },
-  modalButton: {
-    marginLeft: 12,
-    borderRadius: 6,
-  },
+  pickerLabel: {
+  fontSize: 12,
+  color: '#666',
+  marginBottom: 8,
+  marginTop: 8,
+},
+pickerContainer: {
+  marginBottom: 16,
+},
+pickerChip: {
+  marginRight: 8,
+},
+requiredNote: {
+  fontSize: 11,
+  color: '#999',
+  fontStyle: 'italic',
+  marginTop: 8,
+  textAlign: 'right',
+},
 });

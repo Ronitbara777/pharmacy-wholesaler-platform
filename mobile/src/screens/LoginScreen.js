@@ -67,29 +67,37 @@ export default function LoginScreen({ navigation }) {
   };
 
   // Handle login
-  const handleLogin = async () => {
-    if (!validateForm()) return;
-    
-    setLoading(true);
-    try {
-      const response = await AuthService.login(email, password);
+  // Handle login
+const handleLogin = () => {
+  if (!validateForm()) return;
+  
+  console.log('🔐 Attempting login with:', { email });
+  setLoading(true);
+  
+  // Use .then/.catch instead of async/await to avoid warnings
+  AuthService.login(email, password)
+    .then((response) => {
+      console.log('📡 Login response:', response);
       
       if (response.success) {
-        // Navigate to main app
+        console.log('✅ Login successful, navigating to Main');
         navigation.replace('Main');
       } else {
+        console.log('❌ Login failed:', response.message);
         Alert.alert('Login Failed', response.message || 'Invalid credentials');
       }
-    } catch (error) {
-      console.error('Login error:', error);
+    })
+    .catch((error) => {
+      console.error('❌ Login error:', error);
       Alert.alert(
         'Login Error',
         error.message || 'Failed to connect to server. Please try again.'
       );
-    } finally {
+    })
+    .finally(() => {
       setLoading(false);
-    }
-  };
+    });
+};
 
   // Handle demo login (for testing)
   const handleDemoLogin = async () => {

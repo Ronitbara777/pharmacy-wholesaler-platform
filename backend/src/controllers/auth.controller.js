@@ -75,8 +75,11 @@ const register = async (req, res) => {
 // Login user
 const login = async (req, res) => {
   try {
+    console.log('📝 Login attempt for email:', req.body.email);
+    
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('❌ Validation errors:', errors.array());
       return res.status(400).json({ 
         success: false, 
         errors: errors.array() 
@@ -84,11 +87,14 @@ const login = async (req, res) => {
     }
 
     const { email, password } = req.body;
+    console.log('🔍 Looking up user...');
 
     // Find user
     const user = await prisma.user.findUnique({
       where: { email }
     });
+    
+    console.log('👤 User found:', user ? 'Yes' : 'No');
 
     if (!user) {
       return res.status(401).json({ 
@@ -97,8 +103,11 @@ const login = async (req, res) => {
       });
     }
 
+    console.log('🔐 Checking password...');
     // Check password
     const isValidPassword = await bcrypt.compare(password, user.password);
+    console.log('✅ Password valid:', isValidPassword);
+    
     if (!isValidPassword) {
       return res.status(401).json({ 
         success: false, 
@@ -106,6 +115,7 @@ const login = async (req, res) => {
       });
     }
 
+    console.log('🎫 Generating token...');
     // Generate token
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
@@ -116,6 +126,8 @@ const login = async (req, res) => {
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
 
+    console.log('✅ Login successful for:', email);
+    
     res.json({
       success: true,
       message: 'Login successful',
@@ -123,10 +135,24 @@ const login = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('❌ Login error:', error);
+    console.error('❌ Error name:', error.name);
+    console.error('❌ Error message:', error.message);
+    console.error('❌ Error stack:', error.stack);
+    
+    // Check for Prisma errors
+    if (error.code) {
+      console.error('❌ Prisma error code:', error.code);
+    }
+    
     res.status(500).json({ 
       success: false, 
-      message: 'Internal server error' 
+      message: 'Internal server error',
+      // Only send details in development
+      ...(process.env.NODE_ENV === 'development' && { 
+        error: error.message,
+        stack: error.stack 
+      })
     });
   }
 };

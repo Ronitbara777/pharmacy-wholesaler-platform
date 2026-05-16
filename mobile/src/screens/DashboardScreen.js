@@ -5,7 +5,7 @@ import {
   ScrollView,
   RefreshControl,
   Dimensions,
-  TouchableOpacity,
+  Alert,
 } from 'react-native';
 import {
   Card,
@@ -20,108 +20,44 @@ import {
   Divider,
   List,
   ProgressBar,
-  useTheme,
+  Dialog,
+  Portal,
+  ActivityIndicator,
 } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import {
   LineChart,
-  BarChart,
   PieChart,
-  ProgressChart,
 } from 'react-native-chart-kit';
+import AuthService from '../services/auth.service';
+import DashboardService from '../services/dashboard.service';
 
 console.log('📊 DashboardScreen loaded');
-
-// Mock data for the dashboard
-const mockData = {
-  // Summary stats
-  summary: {
-    totalProducts: 1250,
-    totalValue: 45890.50,
-    lowStockItems: 23,
-    expiringSoon: 15,
-    expiredItems: 3,
-    totalSales: 12890.00,
-    todaySales: 2340.50,
-    pendingOrders: 8,
-  },
-
-  // Warehouse space utilization
-  warehouses: [
-    { id: 1, name: 'Main Warehouse', used: 78, total: 100, color: '#4CAF50', products: 450 },
-    { id: 2, name: 'Cold Storage', used: 45, total: 60, color: '#2196F3', products: 120 },
-    { id: 3, name: 'Bulk Storage', used: 92, total: 150, color: '#FF9800', products: 680 },
-  ],
-
-  // Expiring products
-  expiringProducts: [
-    { id: 1, name: 'Paracetamol 500mg', batch: 'B2024-001', expiry: '2024-12-15', quantity: 500, daysLeft: 25 },
-    { id: 2, name: 'Amoxicillin 250mg', batch: 'B2024-002', expiry: '2024-11-30', quantity: 300, daysLeft: 18 },
-    { id: 3, name: 'Vitamin C 1000mg', batch: 'B2024-003', expiry: '2024-10-20', quantity: 150, daysLeft: 12 },
-    { id: 4, name: 'Cetirizine 10mg', batch: 'B2024-004', expiry: '2024-09-05', quantity: 200, daysLeft: 5 },
-    { id: 5, name: 'Ibuprofen 400mg', batch: 'B2024-005', expiry: '2024-08-15', quantity: 75, daysLeft: 2 },
-  ],
-
-  // Recent activities
-  recentActivities: [
-    { id: 1, type: 'stock_in', product: 'Paracetamol', quantity: 500, user: 'John', time: '10:30 AM', date: '2024-02-22' },
-    { id: 2, type: 'stock_out', product: 'Amoxicillin', quantity: 50, user: 'Sarah', time: '09:15 AM', date: '2024-02-22' },
-    { id: 3, type: 'view', product: 'Vitamin C', user: 'Mike', time: '08:45 AM', date: '2024-02-22' },
-    { id: 4, type: 'stock_in', product: 'Cetirizine', quantity: 200, user: 'John', time: '04:30 PM', date: '2024-02-21' },
-    { id: 5, type: 'print', product: 'Inventory Report', user: 'Sarah', time: '02:15 PM', date: '2024-02-21' },
-    { id: 6, type: 'alert', product: 'Expiry Warning', user: 'System', time: '11:00 AM', date: '2024-02-21' },
-  ],
-
-  // Sales data for chart
-  salesData: {
-    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-    datasets: [
-      {
-        data: [4500, 5200, 4800, 6100, 5900, 8200, 7400],
-        color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
-        strokeWidth: 2,
-      },
-    ],
-  },
-
-  // Category distribution
-  categoryData: [
-    { name: 'Analgesics', population: 350, color: '#FF6384', legendFontColor: '#7F7F7F' },
-    { name: 'Antibiotics', population: 280, color: '#36A2EB', legendFontColor: '#7F7F7F' },
-    { name: 'Vitamins', population: 220, color: '#FFCE56', legendFontColor: '#7F7F7F' },
-    { name: 'Antihistamines', population: 190, color: '#4BC0C0', legendFontColor: '#7F7F7F' },
-    { name: 'Others', population: 210, color: '#9966FF', legendFontColor: '#7F7F7F' },
-  ],
-
-  // Top selling products
-  topSelling: [
-    { id: 1, name: 'Paracetamol 500mg', sold: 1250, revenue: 3125.00, trend: '+15%' },
-    { id: 2, name: 'Vitamin C 1000mg', sold: 980, revenue: 7840.00, trend: '+8%' },
-    { id: 3, name: 'Amoxicillin 250mg', sold: 750, revenue: 3750.00, trend: '+12%' },
-    { id: 4, name: 'Cetirizine 10mg', sold: 620, revenue: 1116.00, trend: '-2%' },
-    { id: 5, name: 'Omeprazole 20mg', sold: 580, revenue: 2610.00, trend: '+5%' },
-  ],
-
-  // Stock alerts
-  stockAlerts: [
-    { id: 1, product: 'Ibuprofen 400mg', quantity: 45, threshold: 100, status: 'low' },
-    { id: 2, product: 'Metformin 500mg', quantity: 30, threshold: 100, status: 'critical' },
-    { id: 3, product: 'Aspirin 75mg', quantity: 12, threshold: 50, status: 'critical' },
-    { id: 4, product: 'Lisinopril 10mg', quantity: 85, threshold: 100, status: 'low' },
-  ],
-};
 
 const screenWidth = Dimensions.get('window').width;
 
 export default function DashboardScreen({ navigation }) {
   console.log('📊 DashboardScreen rendering');
   
+  // State for real data
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [data, setData] = useState(mockData);
-  const [selectedTimeRange, setSelectedTimeRange] = useState('week'); // day, week, month
-  const [showAllExpiring, setShowAllExpiring] = useState(false);
-
-  const theme = useTheme();
+  const [stats, setStats] = useState({
+    totalProducts: 0,
+    totalValue: 0,
+    lowStock: 0,
+    expiringSoon: 0,
+    expired: 0,
+    categories: []
+  });
+  
+  const [expiringProducts, setExpiringProducts] = useState([]);
+  const [recentActivities, setRecentActivities] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [user, setUser] = useState(null);
+  
+  // UI State
+  const [logoutDialogVisible, setLogoutDialogVisible] = useState(false);
 
   // Chart configuration
   const chartConfig = {
@@ -130,57 +66,157 @@ export default function DashboardScreen({ navigation }) {
     color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
     strokeWidth: 2,
     barPercentage: 0.5,
-    useShadowColorFromDataset: false,
     decimalPlaces: 0,
     style: {
       borderRadius: 16,
     },
   };
 
+  // Mock sales data (until backend endpoint is ready)
+  const salesData = {
+    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+    datasets: [{
+      data: [4500, 5200, 4800, 6100, 5900, 8200, 7400],
+      color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+      strokeWidth: 2,
+    }],
+  };
+
+  // Load all dashboard data
+  const loadDashboardData = async () => {
+    try {
+      console.log('📊 Loading dashboard data...');
+      
+      // Fetch all data in parallel
+      const [statsResponse, productsResponse, activitiesResponse, warehousesResponse] = await Promise.all([
+        DashboardService.getStats(),
+        DashboardService.getExpiringProducts(),
+        DashboardService.getRecentActivities(),
+        DashboardService.getWarehouses(),
+      ]);
+
+      console.log('📊 Stats response:', statsResponse);
+
+      // Update stats
+      if (statsResponse?.success) {
+        setStats(statsResponse.data);
+      }
+
+      // Update expiring products
+      if (productsResponse?.success) {
+        // Filter products expiring within 30 days
+        const expiring = productsResponse.data.filter(product => {
+          const expiryDate = new Date(product.expiryDate);
+          const today = new Date();
+          const diffDays = Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24));
+          return diffDays <= 30 && diffDays > 0;
+        });
+        setExpiringProducts(expiring.slice(0, 5)); // Show only top 5
+      }
+
+      // Update activities
+      if (activitiesResponse?.success) {
+        setRecentActivities(activitiesResponse.data.slice(0, 5)); // Show only top 5
+      }
+
+      // Update warehouses
+      if (warehousesResponse?.success) {
+        setWarehouses(warehousesResponse.data);
+      }
+
+      // Get current user
+      const currentUser = await AuthService.getCurrentUser();
+      setUser(currentUser);
+
+    } catch (error) {
+      console.error('❌ Error loading dashboard:', error);
+      Alert.alert(
+        'Error',
+        'Failed to load dashboard data. Pull down to refresh.'
+      );
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  // Initial load
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  // Pull to refresh
   const onRefresh = () => {
     setRefreshing(true);
-    // Simulate API call
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 1500);
+    loadDashboardData();
   };
 
-  // Get icon for activity type
-  const getActivityIcon = (type) => {
-    switch(type) {
-      case 'stock_in': return 'arrow-down-circle';
-      case 'stock_out': return 'arrow-up-circle';
-      case 'view': return 'eye';
-      case 'print': return 'print';
-      case 'alert': return 'alert-circle';
-      default: return 'help-circle';
+  // Logout function
+  const handleLogout = async () => {
+    try {
+      await AuthService.logout();
+      navigation.replace('Login');
+    } catch (error) {
+      console.error('Logout error:', error);
+      Alert.alert('Error', 'Failed to logout');
     }
   };
 
-  // Get color for activity type
-  const getActivityColor = (type) => {
-    switch(type) {
-      case 'stock_in': return '#4CAF50';
-      case 'stock_out': return '#F44336';
-      case 'view': return '#2196F3';
-      case 'print': return '#9C27B0';
-      case 'alert': return '#FF9800';
-      default: return '#999';
+  // Format currency
+  const formatCurrency = (amount) => {
+    return `₹${amount?.toFixed(2) || '0.00'}`;
+  };
+
+  // Format date
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString();
+  };
+
+  // Get activity icon
+  const getActivityIcon = (action) => {
+    switch(action) {
+      case 'CREATE': return 'add-circle';
+      case 'UPDATE': return 'create';
+      case 'DELETE': return 'trash';
+      case 'LOGIN': return 'log-in';
+      case 'STOCK_IN': return 'arrow-down-circle';
+      case 'STOCK_OUT': return 'arrow-up-circle';
+      default: return 'time';
     }
   };
+
+  // Get activity color
+  const getActivityColor = (action) => {
+    switch(action) {
+      case 'CREATE': return '#4CAF50';
+      case 'UPDATE': return '#FF9800';
+      case 'DELETE': return '#F44336';
+      case 'LOGIN': return '#2196F3';
+      case 'STOCK_IN': return '#4CAF50';
+      case 'STOCK_OUT': return '#F44336';
+      default: return '#757575';
+    }
+  };
+
+  // Loading state
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={styles.loadingText}>Loading dashboard...</Text>
+      </View>
+    );
+  }
 
   return (
-    <ScrollView 
-      style={styles.container}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#007AFF']} />
-      }
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Header with Greeting */}
+    <View style={styles.container}>
+      {/* Header with User Info and Logout */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>Good morning, John! 👋</Text>
+          <Text style={styles.greeting}>
+            Good {new Date().getHours() < 12 ? 'Morning' : 'Afternoon'}!
+          </Text>
           <Text style={styles.date}>{new Date().toLocaleDateString('en-US', { 
             weekday: 'long', 
             year: 'numeric', 
@@ -188,328 +224,271 @@ export default function DashboardScreen({ navigation }) {
             day: 'numeric' 
           })}</Text>
         </View>
-        <Avatar.Icon 
-          size={50} 
-          icon="account" 
-          style={styles.avatar}
-          color="#fff"
-        />
+        <View style={styles.headerRight}>
+          <Avatar.Icon 
+            size={50} 
+            icon="account" 
+            style={styles.avatar}
+            color="#fff"
+          />
+          <IconButton
+            icon="logout"
+            size={24}
+            onPress={() => setLogoutDialogVisible(true)}
+            style={styles.logoutButton}
+          />
+        </View>
       </View>
-
-      {/* Summary Cards */}
-      <View style={styles.summaryGrid}>
-        <Card style={styles.summaryCard} onPress={() => navigation.navigate('Inventory')}>
-          <Card.Content>
-            <View style={styles.summaryIconContainer}>
-              <Ionicons name="cube-outline" size={24} color="#007AFF" />
-            </View>
-            <Text style={styles.summaryValue}>{data.summary.totalProducts}</Text>
-            <Text style={styles.summaryLabel}>Total Products</Text>
-          </Card.Content>
-        </Card>
-
-        <Card style={styles.summaryCard} onPress={() => navigation.navigate('Inventory')}>
-          <Card.Content>
-            <View style={[styles.summaryIconContainer, { backgroundColor: '#E8F5E9' }]}>
-              <Ionicons name="cash-outline" size={24} color="#4CAF50" />
-            </View>
-            <Text style={styles.summaryValue}>₹{data.summary.totalValue.toLocaleString()}</Text>
-            <Text style={styles.summaryLabel}>Inventory Value</Text>
-          </Card.Content>
-        </Card>
-
-        <Card style={styles.summaryCard} onPress={() => navigation.navigate('Inventory')}>
-          <Card.Content>
-            <View style={[styles.summaryIconContainer, { backgroundColor: '#FFF3E0' }]}>
-              <Ionicons name="warning-outline" size={24} color="#FF9800" />
-            </View>
-            <Text style={styles.summaryValue}>{data.summary.lowStockItems}</Text>
-            <Text style={styles.summaryLabel}>Low Stock</Text>
-          </Card.Content>
-        </Card>
-
-        <Card style={styles.summaryCard} onPress={() => navigation.navigate('Inventory')}>
-          <Card.Content>
-            <View style={[styles.summaryIconContainer, { backgroundColor: '#FFEBEE' }]}>
-              <Ionicons name="alert-circle-outline" size={24} color="#F44336" />
-            </View>
-            <Text style={styles.summaryValue}>{data.summary.expiringSoon}</Text>
-            <Text style={styles.summaryLabel}>Expiring Soon</Text>
-          </Card.Content>
-        </Card>
-      </View>
-
-      {/* Sales Overview Card */}
-      <Card style={styles.chartCard}>
-        <Card.Content>
-          <View style={styles.cardHeader}>
-            <Title>Sales Overview</Title>
-            <View style={styles.timeRangeSelector}>
-              <Chip 
-                selected={selectedTimeRange === 'week'} 
-                onPress={() => setSelectedTimeRange('week')}
-                style={styles.timeChip}
-                mode={selectedTimeRange === 'week' ? 'flat' : 'outlined'}
-              >
-                Week
-              </Chip>
-              <Chip 
-                selected={selectedTimeRange === 'month'} 
-                onPress={() => setSelectedTimeRange('month')}
-                style={styles.timeChip}
-                mode={selectedTimeRange === 'month' ? 'flat' : 'outlined'}
-              >
-                Month
-              </Chip>
-            </View>
-          </View>
           
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+      {/* Logout Confirmation Dialog */}
+      <Portal>
+        <Dialog visible={logoutDialogVisible} onDismiss={() => setLogoutDialogVisible(false)}>
+          <Dialog.Title>Logout</Dialog.Title>
+          <Dialog.Content>
+            <Paragraph>Are you sure you want to logout?</Paragraph>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setLogoutDialogVisible(false)}>Cancel</Button>
+            <Button onPress={handleLogout}>Logout</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      <ScrollView 
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Summary Cards */}
+        <View style={styles.summaryGrid}>
+          <Card style={styles.summaryCard} onPress={() => navigation.navigate('Inventory')}>
+            <Card.Content>
+              <View style={styles.summaryIconContainer}>
+                <Ionicons name="cube-outline" size={24} color="#007AFF" />
+              </View>
+              <Text style={styles.summaryValue}>{stats.totalProducts || 0}</Text>
+              <Text style={styles.summaryLabel}>Total Products</Text>
+            </Card.Content>
+          </Card>
+
+          <Card style={styles.summaryCard} onPress={() => navigation.navigate('Inventory')}>
+            <Card.Content>
+              <View style={[styles.summaryIconContainer, { backgroundColor: '#E8F5E9' }]}>
+                <Ionicons name="cash-outline" size={24} color="#4CAF50" />
+              </View>
+              <Text style={styles.summaryValue}>{formatCurrency(stats.totalValue)}</Text>
+              <Text style={styles.summaryLabel}>Inventory Value</Text>
+            </Card.Content>
+          </Card>
+
+          <Card style={styles.summaryCard} onPress={() => navigation.navigate('Inventory')}>
+            <Card.Content>
+              <View style={[styles.summaryIconContainer, { backgroundColor: '#FFF3E0' }]}>
+                <Ionicons name="warning-outline" size={24} color="#FF9800" />
+              </View>
+              <Text style={styles.summaryValue}>{stats.lowStock || 0}</Text>
+              <Text style={styles.summaryLabel}>Low Stock</Text>
+            </Card.Content>
+          </Card>
+
+          <Card style={styles.summaryCard} onPress={() => navigation.navigate('Alerts')}>
+            <Card.Content>
+              <View style={[styles.summaryIconContainer, { backgroundColor: '#FFEBEE' }]}>
+                <Ionicons name="alert-circle-outline" size={24} color="#F44336" />
+              </View>
+              <Text style={styles.summaryValue}>{stats.expiringSoon || 0}</Text>
+              <Text style={styles.summaryLabel}>Expiring Soon</Text>
+            </Card.Content>
+          </Card>
+        </View>
+
+        {/* Sales Chart (Mock data for now) */}
+        <Card style={styles.chartCard}>
+          <Card.Content>
+            <View style={styles.cardHeader}>
+              <Title>Sales Overview</Title>
+              <Chip icon="calendar" mode="outlined">This Week</Chip>
+            </View>
             <LineChart
-              data={data.salesData}
-              width={Math.max(screenWidth - 40, data.salesData.labels.length * 60)}
+              data={salesData}
+              width={screenWidth - 40}
               height={220}
               chartConfig={chartConfig}
               bezier
               style={styles.chart}
               formatYLabel={(value) => `₹${value}`}
             />
-          </ScrollView>
+          </Card.Content>
+        </Card>
 
-          <View style={styles.salesStats}>
-            <View style={styles.salesStat}>
-              <Text style={styles.salesStatLabel}>Today's Sales</Text>
-              <Text style={styles.salesStatValue}>₹{data.summary.todaySales}</Text>
-            </View>
-            <View style={styles.salesStat}>
-              <Text style={styles.salesStatLabel}>This Week</Text>
-              <Text style={styles.salesStatValue}>₹{data.summary.totalSales}</Text>
-            </View>
-            <View style={styles.salesStat}>
-              <Text style={styles.salesStatLabel}>Pending Orders</Text>
-              <Text style={styles.salesStatValue}>{data.summary.pendingOrders}</Text>
-            </View>
-          </View>
-        </Card.Content>
-      </Card>
+        {/* Warehouse Space Utilization */}
+        {warehouses.length > 0 && (
+          <Card style={styles.card}>
+            <Card.Content>
+              <View style={styles.cardHeader}>
+                <Title>Warehouse Space</Title>
+                <Chip icon="information" mode="outlined">
+                  Total: {warehouses.reduce((sum, w) => sum + (w.capacity || 0), 0)} units
+                </Chip>
+              </View>
 
-      {/* Warehouse Space Utilization */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <View style={styles.cardHeader}>
-            <Title>Warehouse Space</Title>
-            <Chip icon="information" mode="outlined">Total: 310 units</Chip>
-          </View>
+              {warehouses.map(warehouse => {
+                const usedPercent = warehouse.capacity 
+                  ? Math.round((warehouse.usedSpace || 0) / warehouse.capacity * 100)
+                  : 0;
+                
+                return (
+                  <View key={warehouse.id} style={styles.warehouseItem}>
+                    <View style={styles.warehouseHeader}>
+                      <View style={styles.warehouseTitle}>
+                        <View style={[styles.warehouseDot, { backgroundColor: usedPercent > 80 ? '#F44336' : '#4CAF50' }]} />
+                        <Text style={styles.warehouseName}>{warehouse.name}</Text>
+                      </View>
+                      <Text style={styles.warehousePercentage}>{usedPercent}%</Text>
+                    </View>
+                    <ProgressBar 
+                      progress={usedPercent / 100} 
+                      color={usedPercent > 80 ? '#F44336' : '#4CAF50'}
+                      style={styles.progressBar}
+                    />
+                    <View style={styles.warehouseFooter}>
+                      <Text style={styles.warehouseStats}>
+                        Used: {warehouse.usedSpace || 0} units
+                      </Text>
+                      <Text style={styles.warehouseRemaining}>
+                        Free: {warehouse.capacity ? warehouse.capacity - (warehouse.usedSpace || 0) : 0} units
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </Card.Content>
+          </Card>
+        )}
 
-          {data.warehouses.map(warehouse => (
-            <View key={warehouse.id} style={styles.warehouseItem}>
-              <View style={styles.warehouseHeader}>
-                <View style={styles.warehouseTitle}>
-                  <View style={[styles.warehouseDot, { backgroundColor: warehouse.color }]} />
-                  <Text style={styles.warehouseName}>{warehouse.name}</Text>
+        {/* Category Distribution */}
+        {stats.categories && stats.categories.length > 0 && (
+          <Card style={styles.card}>
+            <Card.Content>
+              <Title>Inventory by Category</Title>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <PieChart
+                  data={stats.categories.map((cat, index) => ({
+                    name: cat.category || 'Other',
+                    population: cat._count || 0,
+                    color: `hsl(${index * 60}, 70%, 60%)`,
+                    legendFontColor: '#7F7F7F',
+                  }))}
+                  width={screenWidth - 32}
+                  height={200}
+                  chartConfig={chartConfig}
+                  accessor="population"
+                  backgroundColor="transparent"
+                  paddingLeft="15"
+                  absolute
+                />
+              </ScrollView>
+            </Card.Content>
+          </Card>
+        )}
+
+        {/* Expiring Products Alert */}
+        {expiringProducts.length > 0 && (
+          <Card style={[styles.card, styles.alertCard]}>
+            <Card.Content>
+              <View style={styles.cardHeader}>
+                <View style={styles.alertTitle}>
+                  <Ionicons name="alert-circle" size={24} color="#F44336" />
+                  <Title style={styles.alertTitleText}>Products Near Expiry</Title>
                 </View>
-                <Text style={styles.warehousePercentage}>{warehouse.used}%</Text>
+                <Badge style={styles.alertBadge}>{expiringProducts.length}</Badge>
               </View>
-              <ProgressBar 
-                progress={warehouse.used / warehouse.total} 
-                color={warehouse.color}
-                style={styles.progressBar}
-              />
-              <View style={styles.warehouseFooter}>
-                <Text style={styles.warehouseStats}>
-                  Used: {warehouse.used} units • Products: {warehouse.products}
-                </Text>
-                <Text style={styles.warehouseRemaining}>
-                  Free: {warehouse.total - warehouse.used} units
-                </Text>
-              </View>
-            </View>
-          ))}
-        </Card.Content>
-      </Card>
 
-      {/* Category Distribution */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <Title>Inventory by Category</Title>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <PieChart
-              data={data.categoryData}
-              width={screenWidth - 32}
-              height={200}
-              chartConfig={chartConfig}
-              accessor="population"
-              backgroundColor="transparent"
-              paddingLeft="15"
-              absolute
-            />
-          </ScrollView>
-        </Card.Content>
-      </Card>
+              {expiringProducts.map(product => {
+                const expiryDate = new Date(product.expiryDate);
+                const today = new Date();
+                const daysLeft = Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24));
+                
+                return (
+                  <TouchableOpacity 
+                    key={product.id} 
+                    style={styles.expiryItem}
+                    onPress={() => navigation.navigate('Inventory', { productId: product.id })}
+                  >
+                    <View style={styles.expiryInfo}>
+                      <Text style={styles.expiryProductName}>{product.name}</Text>
+                      <Text style={styles.expiryBatch}>Batch: {product.batchNumber}</Text>
+                    </View>
+                    <View style={styles.expiryDetails}>
+                      <View style={[
+                        styles.daysBadge,
+                        { backgroundColor: daysLeft < 10 ? '#F44336' : '#FF9800' }
+                      ]}>
+                        <Text style={styles.daysText}>{daysLeft} days</Text>
+                      </View>
+                      <Text style={styles.expiryQuantity}>Qty: {product.quantity}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
 
-      {/* Expiring Products Alert */}
-      <Card style={[styles.card, styles.alertCard]}>
-        <Card.Content>
-          <View style={styles.cardHeader}>
-            <View style={styles.alertTitle}>
-              <Ionicons name="alert-circle" size={24} color="#F44336" />
-              <Title style={styles.alertTitleText}>Products Near Expiry</Title>
-            </View>
-            <Badge style={styles.alertBadge}>{data.expiringProducts.length}</Badge>
-          </View>
-
-          {(showAllExpiring ? data.expiringProducts : data.expiringProducts.slice(0, 3)).map(product => (
-            <TouchableOpacity 
-              key={product.id} 
-              style={styles.expiryItem}
-              onPress={() => navigation.navigate('Inventory')}
-            >
-              <View style={styles.expiryInfo}>
-                <Text style={styles.expiryProductName}>{product.name}</Text>
-                <Text style={styles.expiryBatch}>Batch: {product.batch}</Text>
-              </View>
-              <View style={styles.expiryDetails}>
-                <View style={[
-                  styles.daysBadge,
-                  { backgroundColor: product.daysLeft < 10 ? '#F44336' : '#FF9800' }
-                ]}>
-                  <Text style={styles.daysText}>{product.daysLeft} days</Text>
-                </View>
-                <Text style={styles.expiryQuantity}>Qty: {product.quantity}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-
-          {data.expiringProducts.length > 3 && (
-            <Button 
-              mode="text" 
-              onPress={() => setShowAllExpiring(!showAllExpiring)}
-              style={styles.viewAllButton}
-            >
-              {showAllExpiring ? 'Show Less' : `View All (${data.expiringProducts.length})`}
-            </Button>
-          )}
-        </Card.Content>
-      </Card>
-
-      {/* Top Selling Products */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <Title>Top Selling Products</Title>
-          {data.topSelling.map((item, index) => (
-            <View key={item.id} style={styles.topSellingItem}>
-              <View style={styles.topSellingRank}>
-                <Text style={styles.rankText}>{index + 1}</Text>
-              </View>
-              <View style={styles.topSellingInfo}>
-                <Text style={styles.topSellingName}>{item.name}</Text>
-                <Text style={styles.topSellingStats}>
-                  Sold: {item.sold} units • Revenue: ₹{item.revenue}
-                </Text>
-              </View>
-              <Chip 
-                mode="outlined"
-                style={[
-                  styles.trendChip,
-                  { borderColor: item.trend.includes('+') ? '#4CAF50' : '#F44336' }
-                ]}
-                textStyle={{ 
-                  color: item.trend.includes('+') ? '#4CAF50' : '#F44336',
-                  fontSize: 12
-                }}
+              <Button 
+                mode="text" 
+                onPress={() => navigation.navigate('Alerts')}
+                style={styles.viewAllButton}
               >
-                {item.trend}
-              </Chip>
-            </View>
-          ))}
-        </Card.Content>
-      </Card>
+                View All Alerts
+              </Button>
+            </Card.Content>
+          </Card>
+        )}
 
-      {/* Stock Alerts */}
-      <Card style={[styles.card, styles.alertCard]}>
-        <Card.Content>
-          <View style={styles.cardHeader}>
-            <View style={styles.alertTitle}>
-              <Ionicons name="warning" size={24} color="#FF9800" />
-              <Title style={styles.alertTitleText}>Stock Alerts</Title>
-            </View>
-          </View>
-
-          {data.stockAlerts.map(alert => (
-            <View key={alert.id} style={styles.alertItem}>
-              <View style={styles.alertInfo}>
-                <Text style={styles.alertProductName}>{alert.product}</Text>
-                <Text style={styles.alertThreshold}>Threshold: {alert.threshold} units</Text>
+        {/* Recent Activities */}
+        {recentActivities.length > 0 && (
+          <Card style={[styles.card, styles.lastCard]}>
+            <Card.Content>
+              <View style={styles.cardHeader}>
+                <Title>Recent Activities</Title>
+                <Chip icon="clock-outline" mode="outlined">Last 24h</Chip>
               </View>
-              <View style={styles.alertStatus}>
-                <Badge 
-                  style={[
-                    styles.alertStatusBadge,
-                    { backgroundColor: alert.status === 'critical' ? '#F44336' : '#FF9800' }
-                  ]}
-                >
-                  {alert.quantity}
-                </Badge>
-                <Text style={styles.alertStatusText}>{alert.status}</Text>
-              </View>
-            </View>
-          ))}
 
-          <Button 
-            mode="contained" 
-            onPress={() => navigation.navigate('Inventory')}
-            style={styles.reorderButton}
-          >
-            View & Reorder
-          </Button>
-        </Card.Content>
-      </Card>
-
-      {/* Recent Activities */}
-      <Card style={[styles.card, styles.lastCard]}>
-        <Card.Content>
-          <View style={styles.cardHeader}>
-            <Title>Recent Activities</Title>
-            <Chip icon="clock-outline" mode="outlined">Last 24h</Chip>
-          </View>
-
-          {data.recentActivities.map(activity => (
-            <List.Item
-              key={activity.id}
-              title={activity.product}
-              description={`${activity.user} • ${activity.time}`}
-              left={props => (
-                <View style={[styles.activityIcon, { backgroundColor: getActivityColor(activity.type) + '20' }]}>
-                  <Ionicons 
-                    name={getActivityIcon(activity.type)} 
-                    size={24} 
-                    color={getActivityColor(activity.type)} 
-                  />
-                </View>
-              )}
-              right={props => (
-                <View style={styles.activityRight}>
-                  {activity.quantity && (
+              {recentActivities.map(activity => (
+                <List.Item
+                  key={activity.id}
+                  title={activity.entityType || 'Activity'}
+                  description={`${activity.action} • ${new Date(activity.createdAt).toLocaleTimeString()}`}
+                  left={props => (
+                    <View style={[styles.activityIcon, { backgroundColor: getActivityColor(activity.action) + '20' }]}>
+                      <Ionicons 
+                        name={getActivityIcon(activity.action)} 
+                        size={24} 
+                        color={getActivityColor(activity.action)} 
+                      />
+                    </View>
+                  )}
+                  right={props => activity.details?.quantity && (
                     <Chip mode="outlined" style={styles.activityChip}>
-                      {activity.quantity} units
+                      {activity.details.quantity} units
                     </Chip>
                   )}
-                </View>
-              )}
-              style={styles.activityItem}
-            />
-          ))}
+                  style={styles.activityItem}
+                />
+              ))}
 
-          <Button 
-            mode="text" 
-            onPress={() => navigation.navigate('History')}
-            style={styles.viewAllButton}
-          >
-            View All Activities
-          </Button>
-        </Card.Content>
-      </Card>
-    </ScrollView>
+              <Button 
+                mode="text" 
+                onPress={() => navigation.navigate('History')}
+                style={styles.viewAllButton}
+              >
+                View All Activities
+              </Button>
+            </Card.Content>
+          </Card>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -518,33 +497,54 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666',
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    padding: 16,
     paddingTop: 40,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   greeting: {
     fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 4,
   },
   date: {
     fontSize: 14,
     color: '#666',
+    marginTop: 4,
   },
   avatar: {
     backgroundColor: '#007AFF',
+    marginRight: 8,
+  },
+  logoutButton: {
+    margin: 0,
+  },
+  scrollView: {
+    flex: 1,
   },
   summaryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    padding: 10,
-    backgroundColor: '#fff',
+    padding: 8,
   },
   summaryCard: {
     width: '48%',
@@ -558,12 +558,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#E3F2FD',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   summaryValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 4,
   },
   summaryLabel: {
     fontSize: 12,
@@ -579,34 +578,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 15,
   },
-  timeRangeSelector: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  timeChip: {
-    height: 36,
-  },
   chart: {
     marginVertical: 8,
     borderRadius: 16,
-  },
-  salesStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 15,
-  },
-  salesStat: {
-    alignItems: 'center',
-  },
-  salesStatLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 4,
-  },
-  salesStatValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#007AFF',
   },
   card: {
     margin: 10,
@@ -716,78 +690,6 @@ const styles = StyleSheet.create({
   viewAllButton: {
     marginTop: 10,
   },
-  topSellingItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  topSellingRank: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#007AFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  rankText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  topSellingInfo: {
-    flex: 1,
-  },
-  topSellingName: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 2,
-  },
-  topSellingStats: {
-    fontSize: 11,
-    color: '#666',
-  },
-  trendChip: {
-    height: 28,
-  },
-  alertItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  alertInfo: {
-    flex: 1,
-  },
-  alertProductName: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 2,
-  },
-  alertThreshold: {
-    fontSize: 11,
-    color: '#666',
-  },
-  alertStatus: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  alertStatusBadge: {
-    fontSize: 12,
-  },
-  alertStatusText: {
-    fontSize: 12,
-    textTransform: 'capitalize',
-  },
-  reorderButton: {
-    marginTop: 15,
-    borderRadius: 8,
-  },
   activityItem: {
     paddingVertical: 8,
   },
@@ -797,9 +699,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  activityRight: {
-    justifyContent: 'center',
   },
   activityChip: {
     height: 28,

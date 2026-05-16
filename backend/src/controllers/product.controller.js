@@ -263,24 +263,8 @@ const createProduct = async (req, res) => {
 const updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        success: false, 
-        errors: errors.array() 
-      });
-    }
-
-    const {
-      name,
-      genericName,
-      price,
-      mrp,
-      shelf,
-      rack,
-      reorderLevel,
-      status
-    } = req.body;
+    console.log('✏️ Backend - UPDATE request for ID:', id);
+    console.log('✏️ Backend - Update data:', req.body);
 
     // Check if product exists
     const existingProduct = await prisma.product.findUnique({
@@ -288,26 +272,55 @@ const updateProduct = async (req, res) => {
     });
 
     if (!existingProduct) {
+      console.log('✏️ Backend - Product not found');
       return res.status(404).json({
         success: false,
         message: 'Product not found'
       });
     }
 
-    // Update product
-    const product = await prisma.product.update({
-      where: { id },
-      data: {
-        name,
-        genericName,
-        price: price ? parseFloat(price) : undefined,
-        mrp: mrp ? parseFloat(mrp) : undefined,
-        shelf,
-        rack,
-        reorderLevel: reorderLevel ? parseInt(reorderLevel) : undefined,
-        status
+    console.log('✏️ Backend - Current product:', existingProduct);
+
+    // Prepare update data (only include fields that are provided)
+    const updateData = {};
+    
+    if (req.body.name !== undefined) updateData.name = req.body.name;
+    if (req.body.genericName !== undefined) updateData.genericName = req.body.genericName;
+    if (req.body.batchNumber !== undefined) updateData.batchNumber = req.body.batchNumber;
+    if (req.body.expiryDate !== undefined) updateData.expiryDate = new Date(req.body.expiryDate);
+    if (req.body.quantity !== undefined) updateData.quantity = parseInt(req.body.quantity);
+    if (req.body.price !== undefined) updateData.price = parseFloat(req.body.price);
+    if (req.body.mrp !== undefined) updateData.mrp = req.body.mrp ? parseFloat(req.body.mrp) : null;
+    if (req.body.company !== undefined) updateData.company = req.body.company;
+    if (req.body.category !== undefined) updateData.category = req.body.category;
+    if (req.body.manufacturer !== undefined) updateData.manufacturer = req.body.manufacturer;
+    if (req.body.warehouseId !== undefined) updateData.warehouseId = req.body.warehouseId;
+    if (req.body.shelf !== undefined) updateData.shelf = req.body.shelf;
+    if (req.body.rack !== undefined) updateData.rack = req.body.rack;
+    if (req.body.reorderLevel !== undefined) updateData.reorderLevel = parseInt(req.body.reorderLevel);
+    if (req.body.status !== undefined) updateData.status = req.body.status;
+
+    // Auto-update status based on quantity if quantity is being updated
+    if (req.body.quantity !== undefined) {
+      const newQuantity = parseInt(req.body.quantity);
+      if (newQuantity === 0) {
+        updateData.status = 'OUT_OF_STOCK';
+      } else if (newQuantity < (existingProduct.reorderLevel || 100)) {
+        updateData.status = 'LOW_STOCK';
+      } else {
+        updateData.status = 'ACTIVE';
       }
+    }
+
+    console.log('✏️ Backend - Update data prepared:', updateData);
+
+    // Update product
+    const updatedProduct = await prisma.product.update({
+      where: { id },
+      data: updateData
     });
+
+    console.log('✏️ Backend - Product updated:', updatedProduct);
 
     // Log activity
     await prisma.activity.create({
@@ -317,7 +330,7 @@ const updateProduct = async (req, res) => {
         entityId: id,
         userId: req.user.id,
         details: { 
-          productName: product.name,
+          productName: updatedProduct.name,
           changes: req.body
         },
         ipAddress: req.ip,
@@ -328,22 +341,29 @@ const updateProduct = async (req, res) => {
     res.json({
       success: true,
       message: 'Product updated successfully',
-      data: product
+      data: updatedProduct
     });
 
   } catch (error) {
-    console.error('Update product error:', error);
+    console.error('❌ Backend - Update product error:', error);
+    console.error('❌ Backend - Error code:', error.code);
+    console.error('❌ Backend - Error message:', error.message);
+    
     res.status(500).json({ 
       success: false, 
-      message: 'Internal server error' 
+      message: 'Internal server error',
+      error: error.message
     });
   }
 };
 
 // Delete product
+// Delete product - MODIFIED VERSION
+// Delete product - HARD DELETE with cascade
 const deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
+    console.log('🗑️ Backend - HARD DELETE request for ID:', id);
 
     // Check if product exists
     const product = await prisma.product.findUnique({
@@ -357,23 +377,31 @@ const deleteProduct = async (req, res) => {
       });
     }
 
-    // Check if product has movements
-    const movements = await prisma.stockMovement.count({
+    console.log('🗑️ Backend - Product found:', product.name);
+
+    // Delete related records first (due to foreign key constraints)
+    console.log('🗑️ Backend - Deleting related stock movements...');
+    await prisma.stockMovement.deleteMany({
       where: { productId: id }
     });
 
-    if (movements > 0) {
-      // Soft delete - just mark as discontinued
-      await prisma.product.update({
-        where: { id },
-        data: { status: 'DISCONTINUED' }
-      });
-    } else {
-      // Hard delete if no movements
-      await prisma.product.delete({
-        where: { id }
-      });
-    }
+    console.log('🗑️ Backend - Deleting related activities...');
+    await prisma.activity.deleteMany({
+      where: { productId: id }
+    });
+
+    console.log('🗑️ Backend - Deleting related notifications...');
+    await prisma.notification.deleteMany({
+      where: { productId: id }
+    });
+
+    // Finally delete the product
+    console.log('🗑️ Backend - Deleting product...');
+    await prisma.product.delete({
+      where: { id }
+    });
+
+    console.log('🗑️ Backend - Product and all related records permanently deleted');
 
     // Log activity
     await prisma.activity.create({
@@ -384,7 +412,7 @@ const deleteProduct = async (req, res) => {
         userId: req.user.id,
         details: { 
           productName: product.name,
-          hadMovements: movements > 0
+          deletedAt: new Date().toISOString()
         },
         ipAddress: req.ip,
         device: req.headers['user-agent']
@@ -393,16 +421,18 @@ const deleteProduct = async (req, res) => {
 
     res.json({
       success: true,
-      message: movements > 0 
-        ? 'Product discontinued successfully' 
-        : 'Product deleted successfully'
+      message: 'Product and all related records permanently deleted',
     });
 
   } catch (error) {
-    console.error('Delete product error:', error);
+    console.error('❌ Backend - Delete product error:', error);
+    console.error('❌ Backend - Error code:', error.code);
+    console.error('❌ Backend - Error message:', error.message);
+    
     res.status(500).json({ 
       success: false, 
-      message: 'Internal server error' 
+      message: 'Internal server error',
+      error: error.message
     });
   }
 };
