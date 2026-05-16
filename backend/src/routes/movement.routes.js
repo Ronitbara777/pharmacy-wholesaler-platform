@@ -23,7 +23,7 @@ router.use(authenticate);
 // IMPORTANT: Order matters - specific routes before dynamic ones
 router.get('/stats', getMovementStats);  // This must come BEFORE /:id
 router.post('/import', uploadMemory.single('file'), importCSV);
-router.post('/scan', uploadDisk.single('receiptImage'), scanReceipt);
+router.post('/scan', uploadMemory.single('receiptImage'), scanReceipt);
 router.post('/batch', batchCreateMovements);
 router.get('/', getMovements);
 router.post('/', createMovement);

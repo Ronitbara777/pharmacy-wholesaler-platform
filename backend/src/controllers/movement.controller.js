@@ -1,9 +1,8 @@
 const prisma = require('../config/prisma');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
-const fs = require('fs/promises');
-const path = require('path');
 const { createWorker } = require('tesseract.js');
+
 
 const normalizePrice = (raw) => {
   if (!raw) return null;
@@ -81,42 +80,64 @@ const parseReceiptText = (text) => {
 };
 
 const scanReceipt = async (req, res) => {
-  const tempPath = req.file?.path;
   try {
-    if (!req.file || !tempPath) {
-      return res.status(400).json({ success: false, message: 'No receipt image uploaded' });
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No receipt image uploaded'
+      });
     }
 
-    const worker = createWorker({ logger: (m) => console.log('OCR:', m) });
-    await worker.load();
-    await worker.loadLanguage('eng');
-    await worker.initialize('eng');
+    console.log('📄 Receipt received');
+    console.log('File size:', req.file.size);
 
-    const {
-      data: { text }
-    } = await worker.recognize(tempPath);
+    /**
+     * IMPORTANT:
+     * createWorker must be awaited
+     */
+    const worker = await createWorker('eng', 1, {
+      logger: (m) => console.log(m)
+    });
 
+    /**
+     * OCR
+     */
+    const result = await worker.recognize(req.file.buffer);
+
+    const text = result?.data?.text || '';
+    const confidence = result?.data?.confidence || 0;
+
+    /**
+     * Cleanup worker
+     */
     await worker.terminate();
-    await fs.unlink(tempPath).catch(() => null);
 
+    console.log('✅ OCR SUCCESS');
+
+    /**
+     * Parse receipt text
+     */
     const parsed = parseReceiptText(text);
 
-    res.json({
+    return res.json({
       success: true,
       data: {
         text,
+        confidence,
         ...parsed
       }
     });
+
   } catch (error) {
     console.error('❌ Error scanning receipt:', error);
-    if (tempPath) {
-      await fs.unlink(tempPath).catch(() => null);
-    }
-    res.status(500).json({ success: false, message: error.message || 'Failed to scan receipt or parse text' });
+    console.error(error.stack);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to scan receipt or parse text'
+    });
   }
 };
-
 const batchCreateMovements = async (req, res) => {
   try {
     const userId = req.user.id;
