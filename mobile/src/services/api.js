@@ -1,28 +1,76 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
-// Your computer's IP address
-const YOUR_IP = '192.168.1.12';
+const DEFAULT_HOST = '192.168.1.5';
 const PORT = '5000';
+const API_PREFIX = '/api/v1';
 
-// Determine base URL based on platform
-let BASE_URL;
-
-if (Platform.OS === 'web') {
-  // For web, we need to check if window exists
-  if (typeof window !== 'undefined' && window.location) {
-    const protocol = window.location.protocol === 'https:' ? 'https' : 'http';
-    BASE_URL = `${protocol}://${YOUR_IP}:${PORT}/api/v1`;
-    console.log('📡 Web protocol:', protocol);
-  } else {
-    // Fallback for web if window is not available
-    BASE_URL = `http://${YOUR_IP}:${PORT}/api/v1`;
+const parseHostFromString = (hostString) => {
+  if (!hostString || typeof hostString !== 'string') return null;
+  if (hostString.includes('://')) {
+    try {
+      const parsed = new URL(hostString);
+      return parsed.hostname;
+    } catch {
+      // ignore invalid URL
+    }
   }
-} else {
-  // For mobile (iOS/Android), always use http
-  BASE_URL = `http://${YOUR_IP}:${PORT}/api/v1`;
-}
+  return hostString.split(':')[0];
+};
+
+const getExpoHost = () => {
+  const hostCandidates = [
+    Constants.manifest?.debuggerHost,
+    Constants.manifest?.packagerOpts?.devClient?.debuggerHost,
+    Constants.manifest2?.debuggerHost,
+    Constants.manifest2?.packagerOpts?.devClient?.debuggerHost,
+    Constants.expoConfig?.hostUri,
+    Constants.manifest?.hostUri,
+    Constants.expoConfig?.extra?.backendHost,
+    Constants.manifest?.extra?.backendHost,
+    Constants.manifest2?.extra?.backendHost,
+  ];
+
+  for (const hostString of hostCandidates) {
+    const host = parseHostFromString(hostString);
+    if (host && host !== '127.0.0.1' && host !== 'localhost') {
+      return host;
+    }
+  }
+
+  return null;
+};
+
+const getBackendHost = () => {
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && window.location) {
+      return window.location.hostname || DEFAULT_HOST;
+    }
+    return DEFAULT_HOST;
+  }
+
+  const expoHost = getExpoHost();
+  if (expoHost) {
+    return expoHost;
+  }
+
+  // Use emulator loopback only when running inside a simulator/emulator
+  if (!Constants.isDevice) {
+    if (Platform.OS === 'android') {
+      return '10.0.2.2';
+    }
+    if (Platform.OS === 'ios') {
+      return 'localhost';
+    }
+  }
+
+  return DEFAULT_HOST;
+};
+
+const YOUR_IP = getBackendHost();
+const BASE_URL = `http://${YOUR_IP}:${PORT}${API_PREFIX}`;
 
 console.log('📡 Platform:', Platform.OS);
 console.log('📡 API Base URL:', BASE_URL);

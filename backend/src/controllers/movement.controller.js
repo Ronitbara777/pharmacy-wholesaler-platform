@@ -1,6 +1,246 @@
 const prisma = require('../config/prisma');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
+const { createWorker } = require('tesseract.js');
+
+const normalizePrice = (raw) => {
+  if (!raw) return null;
+  const cleaned = raw.replace(/,/g, '.').replace(/[^0-9.]/g, '');
+  const value = parseFloat(cleaned);
+  return Number.isNaN(value) ? null : value;
+};
+
+const parseReceiptText = (text) => {
+  const lines = text
+    .replace(/\r/g, '')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  const items = [];
+  let invoiceNo = '';
+  let party = '';
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\s{2,}/g, ' ').trim();
+    if (!line) continue;
+
+    if (!invoiceNo && /(invoice|bill\s*no|bill#|receipt\s*no|inv[:\-]?)/i.test(line)) {
+      invoiceNo = line.split(/invoice|bill\s*no|bill#|receipt\s*no|inv[:\-]?/i)[1]?.trim() || '';
+      continue;
+    }
+
+    if (!party && /(customer|party|vendor|supplier|to|from)/i.test(line) && /[:\-]/.test(line)) {
+      party = line.split(/[:\-]/).slice(1).join('').trim();
+      continue;
+    }
+
+    if (/total|subtotal|tax|gst|vat|amount due|balance/i.test(line)) {
+      continue;
+    }
+
+    const quantityPricePatterns = [
+      { regex: /^(.*?)\s+x\s*(\d+)\s+([0-9]+(?:[.,][0-9]{2})?)$/i, order: ['name', 'qty', 'price'] },
+      { regex: /^(.*?)\s+(\d+)\s+([0-9]+(?:[.,][0-9]{2})?)$/i, order: ['name', 'qty', 'price'] },
+      { regex: /^(.*?)\s+([0-9]+(?:[.,][0-9]{2})?)\s+(\d+)$/i, order: ['name', 'price', 'qty'] }
+    ];
+
+    let parsed = null;
+    for (const patternObj of quantityPricePatterns) {
+      const match = line.match(patternObj.regex);
+      if (match) {
+        const [, name, firstValue, secondValue] = match;
+        const productName = name.trim().replace(/[^\w\s\-.,]/g, '');
+        const quantity = parseInt(patternObj.order[1] === 'qty' ? firstValue : secondValue, 10);
+        const normalizedPrice = normalizePrice(patternObj.order[1] === 'price' ? firstValue : secondValue);
+        if (productName.length >= 2 && quantity > 0) {
+          parsed = {
+            productName,
+            quantity,
+            price: normalizedPrice,
+            batchNumber: '',
+            notes: ''
+          };
+          break;
+        }
+      }
+    }
+
+    if (parsed) {
+      items.push(parsed);
+    }
+  }
+
+  return {
+    items,
+    invoiceNo,
+    party
+  };
+};
+
+const scanReceipt = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No receipt image uploaded' });
+    }
+
+    const worker = createWorker();
+    await worker.load();
+    await worker.loadLanguage('eng');
+    await worker.initialize('eng');
+
+    const {
+      data: { text }
+    } = await worker.recognize(req.file.buffer);
+
+    await worker.terminate();
+
+    const parsed = parseReceiptText(text);
+
+    res.json({
+      success: true,
+      data: {
+        text,
+        ...parsed
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error scanning receipt:', error);
+    res.status(500).json({ success: false, message: 'Failed to scan receipt or parse text' });
+  }
+};
+
+const batchCreateMovements = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const items = Array.isArray(req.body.items) ? req.body.items : [];
+
+    if (items.length === 0) {
+      return res.status(400).json({ success: false, message: 'No items to save' });
+    }
+
+    const results = [];
+    const errors = [];
+
+    for (const [index, item] of items.entries()) {
+      try {
+        const type = item.type || 'STOCK_IN';
+        const quantity = parseInt(item.quantity, 10);
+        if (!quantity || quantity <= 0) {
+          throw new Error('Invalid quantity');
+        }
+
+        const searchConditions = [];
+        if (item.batchNumber) {
+          searchConditions.push({ batchNumber: item.batchNumber });
+        }
+        if (item.productName) {
+          searchConditions.push({ name: { contains: item.productName, mode: 'insensitive' } });
+        }
+
+        let product = null;
+        if (item.productId) {
+          product = await prisma.product.findUnique({ where: { id: item.productId } });
+        } else if (searchConditions.length) {
+          product = await prisma.product.findFirst({ where: { OR: searchConditions } });
+        }
+
+        if (!product) {
+          throw new Error('Product not found');
+        }
+
+        if (type === 'STOCK_OUT' && product.quantity < quantity) {
+          throw new Error(`Insufficient quantity for ${product.name}`);
+        }
+
+        const price = item.price ? parseFloat(item.price) : product.price;
+        const totalAmount = item.totalAmount ? parseFloat(item.totalAmount) : price * quantity;
+        const newQuantity = type === 'STOCK_IN'
+          ? product.quantity + quantity
+          : product.quantity - quantity;
+
+        const [movement] = await prisma.$transaction([
+          prisma.stockMovement.create({
+            data: {
+              type,
+              quantity,
+              productId: product.id,
+              userId,
+              party: item.party,
+              invoiceNo: item.invoiceNo,
+              notes: item.notes,
+              batchNumber: item.batchNumber || product.batchNumber,
+              expiryDate: item.expiryDate ? new Date(item.expiryDate) : product.expiryDate,
+              price,
+              totalAmount
+            }
+          }),
+          prisma.product.update({
+            where: { id: product.id },
+            data: {
+              quantity: newQuantity,
+              status: newQuantity === 0
+                ? 'OUT_OF_STOCK'
+                : newQuantity < (product.reorderLevel || 100)
+                  ? 'LOW_STOCK'
+                  : 'ACTIVE'
+            }
+          })
+        ]);
+
+        if (type === 'STOCK_OUT' && newQuantity < (product.reorderLevel || 100)) {
+          await prisma.notification.create({
+            data: {
+              type: 'LOW_STOCK',
+              title: 'Low Stock Alert',
+              message: `${product.name} is now below reorder level`,
+              severity: 'MEDIUM',
+              userId,
+              productId: product.id,
+              data: {
+                currentQuantity: newQuantity,
+                reorderLevel: product.reorderLevel || 100,
+                movementId: movement.id
+              }
+            }
+          });
+        }
+
+        results.push(movement);
+      } catch (error) {
+        errors.push({ index, item, error: error.message });
+      }
+    }
+
+    await prisma.activity.create({
+      data: {
+        action: 'BATCH_IMPORT',
+        entityType: 'MOVEMENT',
+        userId,
+        details: {
+          totalRows: items.length,
+          successCount: results.length,
+          errorCount: errors.length
+        },
+        ipAddress: req.ip,
+        device: req.headers['user-agent']
+      }
+    });
+
+    res.json({
+      success: true,
+      message: `Processed ${results.length} of ${items.length} receipt items`,
+      data: {
+        processed: results.length,
+        errors,
+        items: results
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error saving batch movements:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
 
 // Get all movements with filters
 const getMovements = async (req, res) => {
@@ -414,5 +654,7 @@ module.exports = {
   getMovementById,
   createMovement,
   getMovementStats,
-  importCSV
+  importCSV,
+  scanReceipt,
+  batchCreateMovements
 };

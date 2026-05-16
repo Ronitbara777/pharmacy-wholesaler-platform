@@ -6,7 +6,8 @@ import {
   TouchableOpacity,
   Alert,
   RefreshControl,
-  Platform
+  Platform,
+  Image
 } from 'react-native';
 import {
   Card,
@@ -66,8 +67,14 @@ export default function InputOutputScreen({ navigation }) {
   const [importing, setImporting] = useState(false);
   
   // State for camera
-  const [cameraVisible, setCameraVisible] = useState(false);
   const [cameraPermission, setCameraPermission] = useState(null);
+  const [receiptPreviewVisible, setReceiptPreviewVisible] = useState(false);
+  const [receiptImageUri, setReceiptImageUri] = useState(null);
+  const [receiptItems, setReceiptItems] = useState([]);
+  const [receiptInvoiceNo, setReceiptInvoiceNo] = useState('');
+  const [receiptParty, setReceiptParty] = useState('');
+  const [scanningReceipt, setScanningReceipt] = useState(false);
+  const [savingReceipt, setSavingReceipt] = useState(false);
   
   // State for date picker
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -287,11 +294,135 @@ export default function InputOutputScreen({ navigation }) {
     }
   };
 
-  const handleBarcodeScan = async () => {
-    if (cameraPermission) {
-      setCameraVisible(true);
-    } else {
-      Alert.alert('Permission Required', 'Camera permission is needed to scan barcodes');
+  const processReceiptImage = async (uri) => {
+    try {
+      setReceiptImageUri(uri);
+      const filename = uri.split('/').pop();
+      const match = filename?.match(/\.([^.]+)$/);
+      const fileType = match?.[1]?.toLowerCase() === 'png' ? 'image/png' : 'image/jpeg';
+
+      const formData = new FormData();
+      formData.append('receiptImage', {
+        uri,
+        name: filename || `receipt.${match?.[1] || 'jpg'}`,
+        type: fileType
+      });
+
+      const response = await MovementService.scanReceipt(formData);
+
+      if (response.success) {
+        const items = (response.data.items || []).map(item => ({
+          productName: item.productName || '',
+          batchNumber: item.batchNumber || '',
+          quantity: item.quantity?.toString() || '1',
+          price: item.price?.toString() || '',
+          invoiceNo: item.invoiceNo || '',
+          party: item.party || '',
+          notes: item.notes || ''
+        }));
+
+        setReceiptItems(items.length ? items : [{ productName: '', batchNumber: '', quantity: '1', price: '', notes: '' }]);
+        setReceiptInvoiceNo(response.data.invoiceNo || '');
+        setReceiptParty(response.data.party || '');
+        setReceiptPreviewVisible(true);
+      } else {
+        throw new Error(response.message || 'Unable to parse receipt');
+      }
+    } catch (error) {
+      setReceiptPreviewVisible(false);
+      console.error('Error processing receipt image:', error);
+      Alert.alert('Receipt scan failed', error.message || 'Try again with a clearer image.');
+    }
+  };
+
+  const handleReceiptScan = async () => {
+    if (!cameraPermission) {
+      const { status } = await Camera.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Camera permission is needed to scan receipts');
+        return;
+      }
+      setCameraPermission(true);
+    }
+
+    try {
+      setScanningReceipt(true);
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 0.7
+      });
+
+      const imageUri = result.uri || result.assets?.[0]?.uri;
+      if (result.canceled || !imageUri) {
+        return;
+      }
+
+      await processReceiptImage(imageUri);
+    } catch (error) {
+      console.error('Error scanning receipt:', error);
+      Alert.alert('Scan failed', error.message || 'Unable to scan the receipt');
+    } finally {
+      setScanningReceipt(false);
+    }
+  };
+
+  const handleReceiptItemChange = (index, field, value) => {
+    const updatedItems = [...receiptItems];
+    updatedItems[index] = { ...updatedItems[index], [field]: value };
+    setReceiptItems(updatedItems);
+  };
+
+  const handleAddReceiptItem = () => {
+    setReceiptItems([...receiptItems, { productName: '', batchNumber: '', quantity: '1', price: '', notes: '' }]);
+  };
+
+  const handleRemoveReceiptItem = (index) => {
+    setReceiptItems(receiptItems.filter((_, idx) => idx !== index));
+  };
+
+  const resetReceiptPreview = () => {
+    setReceiptPreviewVisible(false);
+    setReceiptImageUri(null);
+    setReceiptItems([]);
+    setReceiptInvoiceNo('');
+    setReceiptParty('');
+  };
+
+  const handleSaveReceiptPreview = async () => {
+    if (!receiptItems.length) {
+      Alert.alert('No receipt items', 'Add or scan items before saving.');
+      return;
+    }
+
+    try {
+      setSavingReceipt(true);
+      const payload = receiptItems.map(item => ({
+        type: mode === 'in' ? 'STOCK_IN' : 'STOCK_OUT',
+        productName: item.productName,
+        batchNumber: item.batchNumber,
+        quantity: parseInt(item.quantity, 10) || 0,
+        price: item.price ? parseFloat(item.price) : undefined,
+        party: mode === 'out' ? receiptParty : undefined,
+        invoiceNo: receiptInvoiceNo,
+        notes: item.notes,
+        totalAmount: item.price && item.quantity ? parseFloat(item.price) * parseInt(item.quantity, 10) : undefined
+      }));
+
+      const response = await MovementService.createBatchMovements(payload);
+
+      if (response.success) {
+        showSnackbar(`${response.data.processed} Items saved`);
+        resetReceiptPreview();
+        await Promise.all([loadStats(), loadMovements()]);
+      } else {
+        throw new Error(response.message || 'Failed to save receipt items');
+      }
+    } catch (error) {
+      console.error('Error saving receipt items:', error);
+      Alert.alert('Save failed', error.message || 'Please correct the preview and try again.');
+    } finally {
+      setSavingReceipt(false);
     }
   };
 
@@ -416,11 +547,13 @@ export default function InputOutputScreen({ navigation }) {
         
         <Button
           mode="outlined"
-          onPress={handleBarcodeScan}
+          onPress={handleReceiptScan}
           style={styles.actionButton}
-          icon="barcode-scan"
+          icon="camera"
+          loading={scanningReceipt}
+          disabled={scanningReceipt}
         >
-          Scan
+          Scan Receipt
         </Button>
       </View>
 
@@ -624,21 +757,107 @@ export default function InputOutputScreen({ navigation }) {
         />
       )}
 
-      {/* Camera Scanner (simplified) */}
+      {/* Receipt Preview Modal */}
       <Portal>
-        <Dialog visible={cameraVisible} onDismiss={() => setCameraVisible(false)}>
-          <Dialog.Title>Scan Barcode</Dialog.Title>
+        <Dialog visible={receiptPreviewVisible} onDismiss={resetReceiptPreview} style={styles.receiptDialog}>
+          <Dialog.Title>Review Receipt</Dialog.Title>
           <Dialog.Content>
-            <View style={styles.cameraPlaceholder}>
-              <Ionicons name="camera" size={64} color="#ccc" />
-              <Text>Camera would open here</Text>
-              <Text style={styles.cameraHint}>
-                This would scan barcodes and auto-fill product info
-              </Text>
-            </View>
+            <ScrollView style={styles.receiptDialogContent}>
+              {receiptImageUri ? (
+                <Image source={{ uri: receiptImageUri }} style={styles.receiptImagePreview} />
+              ) : null}
+
+              <TextInput
+                label="Invoice / Receipt No"
+                value={receiptInvoiceNo}
+                onChangeText={setReceiptInvoiceNo}
+                mode="outlined"
+                style={styles.formInput}
+              />
+
+              {mode === 'out' && (
+                <TextInput
+                  label="Party / Customer"
+                  value={receiptParty}
+                  onChangeText={setReceiptParty}
+                  mode="outlined"
+                  style={styles.formInput}
+                />
+              )}
+
+              {receiptItems.map((item, index) => (
+                <Card key={`${item.productName}-${index}`} style={styles.receiptItemCard}>
+                  <Card.Content>
+                    <View style={styles.receiptItemHeader}>
+                      <Text style={styles.receiptItemTitle}>Item {index + 1}</Text>
+                      <IconButton
+                        icon="delete"
+                        size={20}
+                        onPress={() => handleRemoveReceiptItem(index)}
+                      />
+                    </View>
+
+                    <TextInput
+                      label="Product name"
+                      value={item.productName}
+                      onChangeText={value => handleReceiptItemChange(index, 'productName', value)}
+                      mode="outlined"
+                      style={styles.formInput}
+                    />
+                    <TextInput
+                      label="Batch Number"
+                      value={item.batchNumber}
+                      onChangeText={value => handleReceiptItemChange(index, 'batchNumber', value)}
+                      mode="outlined"
+                      style={styles.formInput}
+                    />
+                    <TextInput
+                      label="Quantity"
+                      value={item.quantity}
+                      onChangeText={value => handleReceiptItemChange(index, 'quantity', value)}
+                      keyboardType="numeric"
+                      mode="outlined"
+                      style={styles.formInput}
+                    />
+                    <TextInput
+                      label="Price"
+                      value={item.price}
+                      onChangeText={value => handleReceiptItemChange(index, 'price', value)}
+                      keyboardType="numeric"
+                      mode="outlined"
+                      style={styles.formInput}
+                    />
+                    <TextInput
+                      label="Notes"
+                      value={item.notes}
+                      onChangeText={value => handleReceiptItemChange(index, 'notes', value)}
+                      mode="outlined"
+                      style={styles.formInput}
+                    />
+                  </Card.Content>
+                </Card>
+              ))}
+
+              <Button
+                mode="outlined"
+                onPress={handleAddReceiptItem}
+                icon="plus"
+                style={styles.actionButton}
+              >
+                Add Item
+              </Button>
+            </ScrollView>
           </Dialog.Content>
+
           <Dialog.Actions>
-            <Button onPress={() => setCameraVisible(false)}>Close</Button>
+            <Button onPress={resetReceiptPreview}>Cancel</Button>
+            <Button
+              mode="contained"
+              onPress={handleSaveReceiptPreview}
+              loading={savingReceipt}
+            >
+              Save Items
+            </Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>
@@ -811,8 +1030,32 @@ const styles = StyleSheet.create({
   },
   formDialog: {
     maxHeight: '80%',
+  },  receiptDialog: {
+    maxHeight: '85%'
   },
-  formContainer: {
+  receiptDialogContent: {
+    maxHeight: 520
+  },
+  receiptImagePreview: {
+    width: '100%',
+    height: 180,
+    borderRadius: 8,
+    marginBottom: 12,
+    backgroundColor: '#f2f2f2'
+  },
+  receiptItemCard: {
+    marginBottom: 12,
+    backgroundColor: '#fff'
+  },
+  receiptItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  receiptItemTitle: {
+    fontSize: 14,
+    fontWeight: 'bold'
+  },  formContainer: {
     maxHeight: 400,
   },
   formInput: {

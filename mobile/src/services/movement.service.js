@@ -61,6 +61,32 @@ const MovementService = {
     }
   },
 
+  // Scan receipt image for OCR parsing
+  scanReceipt: async (formData) => {
+    try {
+      const response = await api.post('/movements/scan', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      return response;
+    } catch (error) {
+      console.error('❌ Error scanning receipt:', error);
+      throw error;
+    }
+  },
+
+  // Create batch movements from scanned receipt items
+  createBatchMovements: async (items) => {
+    try {
+      const response = await api.post('/movements/batch', { items });
+      return response;
+    } catch (error) {
+      console.error('❌ Error creating batch movements:', error);
+      throw error;
+    }
+  },
+
   // Get products for dropdown
   getProducts: async () => {
     try {
