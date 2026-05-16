@@ -27,7 +27,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import { Camera } from 'expo-camera';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import MovementService from '../services/movement.service';
 
@@ -161,8 +160,20 @@ export default function InputOutputScreen({ navigation }) {
   };
 
   const requestCameraPermission = async () => {
-    const { status } = await Camera.requestCameraPermissionsAsync();
-    setCameraPermission(status === 'granted');
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      setCameraPermission(status === 'granted');
+
+      if (status !== 'granted') {
+        Alert.alert(
+          'Camera Permission',
+          'Camera access is required to scan receipts. Please allow it in settings.'
+        );
+      }
+    } catch (error) {
+      console.error('Error requesting camera permission:', error);
+      setCameraPermission(false);
+    }
   };
 
   const handleProductSearch = (text) => {
@@ -336,16 +347,17 @@ export default function InputOutputScreen({ navigation }) {
   };
 
   const handleReceiptScan = async () => {
-    if (!cameraPermission) {
-      const { status } = await Camera.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Camera permission is needed to scan receipts');
-        return;
-      }
-      setCameraPermission(true);
-    }
-
     try {
+      if (!cameraPermission) {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Required', 'Camera permission is needed to scan receipts');
+          setCameraPermission(false);
+          return;
+        }
+        setCameraPermission(true);
+      }
+
       setScanningReceipt(true);
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -353,14 +365,48 @@ export default function InputOutputScreen({ navigation }) {
         quality: 0.7
       });
 
-      const imageUri = result.uri || result.assets?.[0]?.uri;
-      if (result.canceled || !imageUri) {
+      const imageUri = result.assets?.[0]?.uri || result.uri;
+      if (result.cancelled || result.canceled || !imageUri) {
         return;
       }
 
       await processReceiptImage(imageUri);
     } catch (error) {
       console.error('Error scanning receipt:', error);
+      if (error.message?.includes('User cancelled') || error.message?.includes('cancelled')) {
+        return;
+      }
+
+      if (error.message?.toLowerCase().includes('camera') || error.message?.toLowerCase().includes('no camera')) {
+        Alert.alert(
+          'Camera unavailable',
+          'Camera could not be opened. You can select a receipt image from your gallery instead.',
+          [
+            {
+              text: 'Select from Gallery',
+              onPress: async () => {
+                try {
+                  const galleryResult = await ImagePicker.launchImageLibraryAsync({
+                    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                    allowsEditing: false,
+                    quality: 0.7
+                  });
+                  const galleryUri = galleryResult.assets?.[0]?.uri || galleryResult.uri;
+                  if (galleryResult.cancelled || galleryResult.canceled || !galleryUri) {
+                    return;
+                  }
+                  await processReceiptImage(galleryUri);
+                } catch (galleryError) {
+                  console.error('Gallery selection failed:', galleryError);
+                }
+              }
+            },
+            { text: 'OK', style: 'cancel' }
+          ]
+        );
+        return;
+      }
+
       Alert.alert('Scan failed', error.message || 'Unable to scan the receipt');
     } finally {
       setScanningReceipt(false);
@@ -1070,15 +1116,5 @@ const styles = StyleSheet.create({
   productMenu: {
     width: '100%',
     marginTop: 40,
-  },
-  cameraPlaceholder: {
-    alignItems: 'center',
-    padding: 20,
-    gap: 12,
-  },
-  cameraHint: {
-    textAlign: 'center',
-    color: '#666',
-    fontSize: 12,
   },
 });

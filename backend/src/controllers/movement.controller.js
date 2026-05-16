@@ -1,6 +1,8 @@
 const prisma = require('../config/prisma');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
+const fs = require('fs/promises');
+const path = require('path');
 const { createWorker } = require('tesseract.js');
 
 const normalizePrice = (raw) => {
@@ -79,21 +81,23 @@ const parseReceiptText = (text) => {
 };
 
 const scanReceipt = async (req, res) => {
+  const tempPath = req.file?.path;
   try {
-    if (!req.file) {
+    if (!req.file || !tempPath) {
       return res.status(400).json({ success: false, message: 'No receipt image uploaded' });
     }
 
-    const worker = createWorker();
+    const worker = createWorker({ logger: (m) => console.log('OCR:', m) });
     await worker.load();
     await worker.loadLanguage('eng');
     await worker.initialize('eng');
 
     const {
       data: { text }
-    } = await worker.recognize(req.file.buffer);
+    } = await worker.recognize(tempPath);
 
     await worker.terminate();
+    await fs.unlink(tempPath).catch(() => null);
 
     const parsed = parseReceiptText(text);
 
@@ -106,7 +110,10 @@ const scanReceipt = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error scanning receipt:', error);
-    res.status(500).json({ success: false, message: 'Failed to scan receipt or parse text' });
+    if (tempPath) {
+      await fs.unlink(tempPath).catch(() => null);
+    }
+    res.status(500).json({ success: false, message: error.message || 'Failed to scan receipt or parse text' });
   }
 };
 
