@@ -689,6 +689,7 @@ export default function InventoryScreen({ navigation }) {
       {/* Product List/Grid */}
       <ScrollView
         style={styles.productList}
+        contentContainerStyle={{ paddingBottom: 80 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }

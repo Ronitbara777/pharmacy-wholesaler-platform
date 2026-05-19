@@ -2,7 +2,7 @@ const prisma = require('../config/prisma');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
 const { createWorker } = require('tesseract.js');
-
+const pdf = require('pdf-parse');
 
 const normalizePrice = (raw) => {
   if (!raw) return null;
@@ -174,7 +174,26 @@ const batchCreateMovements = async (req, res) => {
         }
 
         if (!product) {
-          throw new Error('Product not found');
+          if (type === 'STOCK_IN') {
+            const defaultWarehouse = await prisma.warehouse.findFirst();
+            if (!defaultWarehouse) throw new Error("No warehouse available to store new product");
+             
+            product = await prisma.product.create({
+              data: {
+                name: item.productName || 'Unknown Product',
+                batchNumber: item.batchNumber || 'UNKNOWN',
+                expiryDate: item.expiryDate ? new Date(item.expiryDate) : new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
+                price: item.price ? parseFloat(item.price) : 0,
+                mrp: item.mrp ? parseFloat(item.mrp) : null,
+                company: item.party || 'Imported',
+                warehouseId: defaultWarehouse.id,
+                quantity: 0,
+                status: 'ACTIVE'
+              }
+            });
+          } else {
+            throw new Error(`Product not found: ${item.productName}`);
+          }
         }
 
         if (type === 'STOCK_OUT' && product.quantity < quantity) {
@@ -677,12 +696,171 @@ const importCSV = async (req, res) => {
   }
 };
 
+const parsePDFText = (text) => {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  
+  const items = [];
+  let invoiceNo = '';
+  let party = '';
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Invoice No
+    if (line.toLowerCase().startsWith('bill no :')) {
+      invoiceNo = line.substring(9).trim();
+    }
+    
+    // Party
+    if (line.startsWith('M/s ')) {
+      party = line.trim();
+    }
+    
+    // Match serial number like "1.", "2."
+    if (/^\d+\.$/.test(line) && i + 5 < lines.length) {
+      const productName = lines[i + 3];
+      const batchNumber = lines[i + 4];
+      const numbersLine = lines[i + 5];
+      
+      const parts = numbersLine.trim().split(/\s+/);
+      if (parts.length >= 6) {
+        const expiry = parts[0]; // e.g. "3/28"
+        const qty = parseInt(parts[1], 10);
+        const mrp = parseFloat(parts[2]);
+        const rate = parseFloat(parts[3]);
+        
+        // Convert expiry "MM/YY" to "YYYY-MM-DD"
+        let expiryDate = null;
+        if (expiry.includes('/')) {
+           const [m, y] = expiry.split('/');
+           expiryDate = `20${y}-${m.padStart(2, '0')}-01`;
+        }
+        
+        items.push({
+          productName,
+          batchNumber,
+          quantity: qty,
+          mrp,
+          price: rate,
+          expiryDate,
+          notes: ''
+        });
+      }
+      // Skip the matched lines
+      i += 5;
+    }
+  }
+  
+  return { invoiceNo, party, items };
+};
+
+// Import movements from PDF
+const importPDF = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded'
+      });
+    }
+
+    console.log('📄 PDF received for extraction');
+    const pdfData = await pdf(req.file.buffer);
+    
+    const parsedData = parsePDFText(pdfData.text);
+    
+    if (parsedData.items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Could not extract any tabular items from the PDF'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Extracted ${parsedData.items.length} items from PDF`,
+      data: parsedData
+    });
+
+  } catch (error) {
+    console.error('❌ Error processing PDF:', error);
+    res.status(500).json({ success: false, message: 'Failed to process PDF file' });
+  }
+};
+
+// Get sales data for the last 7 days
+const getSalesData = async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(today.getDate() - 6);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
+    const movements = await prisma.stockMovement.findMany({
+      where: {
+        type: 'STOCK_OUT',
+        createdAt: {
+          gte: sevenDaysAgo,
+          lte: today
+        }
+      },
+      select: {
+        totalAmount: true,
+        createdAt: true
+      }
+    });
+
+    // Initialize array for last 7 days
+    const labels = [];
+    const data = [];
+    const daysMap = {};
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+      labels.push(dayName);
+      daysMap[dayName] = 0;
+    }
+
+    movements.forEach(m => {
+      const dayName = new Date(m.createdAt).toLocaleDateString('en-US', { weekday: 'short' });
+      if (daysMap[dayName] !== undefined) {
+        daysMap[dayName] += (m.totalAmount || 0);
+      }
+    });
+
+    labels.forEach(label => {
+      data.push(daysMap[label]);
+    });
+
+    res.json({
+      success: true,
+      data: {
+        labels,
+        datasets: [{
+          data,
+          color: "(opacity = 1) => `rgba(0, 122, 255, ${opacity})`",
+          strokeWidth: 2
+        }]
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error fetching sales data:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
 module.exports = {
   getMovements,
   getMovementById,
   createMovement,
   getMovementStats,
   importCSV,
+  importPDF,
   scanReceipt,
-  batchCreateMovements
+  batchCreateMovements,
+  getSalesData
 };

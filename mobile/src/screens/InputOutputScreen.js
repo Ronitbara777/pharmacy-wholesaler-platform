@@ -272,34 +272,63 @@ export default function InputOutputScreen({ navigation }) {
     }
   };
 
-  const handleCSVImport = async () => {
+  const handleDocumentImport = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: 'text/csv',
+        type: ['text/csv', 'application/pdf'],
         copyToCacheDirectory: true
       });
 
       if (!result.canceled && result.assets[0]) {
         setImporting(true);
+        const fileAsset = result.assets[0];
         
         const formData = new FormData();
         formData.append('file', {
-          uri: result.assets[0].uri,
-          type: 'text/csv',
-          name: result.assets[0].name
+          uri: fileAsset.uri,
+          type: fileAsset.mimeType || (fileAsset.name.endsWith('.pdf') ? 'application/pdf' : 'text/csv'),
+          name: fileAsset.name
         });
 
-        const response = await MovementService.importCSV(formData);
-        
-        if (response.success) {
-          showSnackbar(response.message);
-          await loadStats();
-          await loadMovements();
+        if (fileAsset.name.toLowerCase().endsWith('.pdf') || fileAsset.mimeType === 'application/pdf') {
+          // Handle PDF
+          const response = await MovementService.importPDF(formData);
+          if (response.success) {
+            const items = (response.data.items || []).map(item => ({
+              productName: item.productName || '',
+              batchNumber: item.batchNumber || '',
+              quantity: item.quantity?.toString() || '1',
+              price: item.price?.toString() || '',
+              mrp: item.mrp?.toString() || '',
+              invoiceNo: item.invoiceNo || response.data.invoiceNo || '',
+              party: item.party || response.data.party || '',
+              notes: item.notes || ''
+            }));
+
+            setReceiptItems(items.length ? items : [{ productName: '', batchNumber: '', quantity: '1', price: '', notes: '' }]);
+            setReceiptInvoiceNo(response.data.invoiceNo || '');
+            setReceiptParty(response.data.party || '');
+            
+            // Re-use the receipt preview screen for PDFs!
+            setReceiptImageUri(null); // No image to show for PDF
+            setReceiptPreviewVisible(true);
+            showSnackbar(response.message);
+          } else {
+            throw new Error(response.message || 'Unable to parse PDF');
+          }
+        } else {
+          // Handle CSV
+          const response = await MovementService.importCSV(formData);
+          if (response.success) {
+            showSnackbar(response.message);
+            await loadStats();
+            await loadMovements();
+          }
         }
       }
     } catch (error) {
-      console.error('Error importing CSV:', error);
-      Alert.alert('Error', error.message || 'Failed to import CSV');
+      console.error('Error importing document:', error);
+      Alert.alert('Error', error.message || 'Failed to import document');
     } finally {
       setImporting(false);
     }
@@ -449,7 +478,8 @@ export default function InputOutputScreen({ navigation }) {
         batchNumber: item.batchNumber,
         quantity: parseInt(item.quantity, 10) || 0,
         price: item.price ? parseFloat(item.price) : undefined,
-        party: mode === 'out' ? receiptParty : undefined,
+        mrp: item.mrp ? parseFloat(item.mrp) : undefined,
+        party: mode === 'out' ? receiptParty : (receiptParty || item.party),
         invoiceNo: receiptInvoiceNo,
         notes: item.notes,
         totalAmount: item.price && item.quantity ? parseFloat(item.price) * parseInt(item.quantity, 10) : undefined
@@ -458,7 +488,14 @@ export default function InputOutputScreen({ navigation }) {
       const response = await MovementService.createBatchMovements(payload);
 
       if (response.success) {
-        showSnackbar(`${response.data.processed} Items saved`);
+        if (response.data.errors && response.data.errors.length > 0) {
+          Alert.alert(
+            'Partial Success', 
+            `Saved ${response.data.processed} items.\nFailed to save ${response.data.errors.length} items (e.g., product not found in database or insufficient quantity for sale).`
+          );
+        } else {
+          showSnackbar(`${response.data.processed} Items saved`);
+        }
         resetReceiptPreview();
         await Promise.all([loadStats(), loadMovements()]);
       } else {
@@ -582,13 +619,13 @@ export default function InputOutputScreen({ navigation }) {
         
         <Button
           mode="outlined"
-          onPress={handleCSVImport}
+          onPress={handleDocumentImport}
           style={styles.actionButton}
           icon="file-document"
           loading={importing}
           disabled={importing}
         >
-          Import CSV
+          Import Doc
         </Button>
         
         <Button
@@ -821,15 +858,13 @@ export default function InputOutputScreen({ navigation }) {
                 style={styles.formInput}
               />
 
-              {mode === 'out' && (
-                <TextInput
-                  label="Party / Customer"
-                  value={receiptParty}
-                  onChangeText={setReceiptParty}
-                  mode="outlined"
-                  style={styles.formInput}
-                />
-              )}
+              <TextInput
+                label="Party / Company (Supplier/Customer)"
+                value={receiptParty}
+                onChangeText={setReceiptParty}
+                mode="outlined"
+                style={styles.formInput}
+              />
 
               {receiptItems.map((item, index) => (
                 <Card key={`${item.productName}-${index}`} style={styles.receiptItemCard}>
@@ -869,6 +904,14 @@ export default function InputOutputScreen({ navigation }) {
                       label="Price"
                       value={item.price}
                       onChangeText={value => handleReceiptItemChange(index, 'price', value)}
+                      keyboardType="numeric"
+                      mode="outlined"
+                      style={styles.formInput}
+                    />
+                    <TextInput
+                      label="MRP (Optional)"
+                      value={item.mrp}
+                      onChangeText={value => handleReceiptItemChange(index, 'mrp', value)}
                       keyboardType="numeric"
                       mode="outlined"
                       style={styles.formInput}

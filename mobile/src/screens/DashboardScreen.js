@@ -72,15 +72,15 @@ export default function DashboardScreen({ navigation }) {
     },
   };
 
-  // Mock sales data (until backend endpoint is ready)
-  const salesData = {
+  // Real sales data state
+  const [salesData, setSalesData] = useState({
     labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
     datasets: [{
-      data: [4500, 5200, 4800, 6100, 5900, 8200, 7400],
+      data: [0, 0, 0, 0, 0, 0, 0],
       color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
       strokeWidth: 2,
     }],
-  };
+  });
 
   // Load all dashboard data
   const loadDashboardData = async () => {
@@ -88,11 +88,12 @@ export default function DashboardScreen({ navigation }) {
       console.log('📊 Loading dashboard data...');
       
       // Fetch all data in parallel
-      const [statsResponse, productsResponse, activitiesResponse, warehousesResponse] = await Promise.all([
+      const [statsResponse, productsResponse, activitiesResponse, warehousesResponse, salesResponse] = await Promise.all([
         DashboardService.getStats(),
         DashboardService.getExpiringProducts(),
         DashboardService.getRecentActivities(),
         DashboardService.getWarehouses(),
+        DashboardService.getSalesData(),
       ]);
 
       console.log('📊 Stats response:', statsResponse);
@@ -100,6 +101,18 @@ export default function DashboardScreen({ navigation }) {
       // Update stats
       if (statsResponse?.success) {
         setStats(statsResponse.data);
+      }
+
+      // Update sales data
+      if (salesResponse?.success && salesResponse.data) {
+        setSalesData({
+          labels: salesResponse.data.labels || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+          datasets: [{
+            data: salesResponse.data.datasets?.[0]?.data || [0, 0, 0, 0, 0, 0, 0],
+            color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+            strokeWidth: 2,
+          }]
+        });
       }
 
       // Update expiring products
