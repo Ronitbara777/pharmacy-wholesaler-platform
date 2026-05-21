@@ -6,7 +6,7 @@ import Constants from 'expo-constants';
 // ─── REMOTE TESTING CONFIG ──────────────────────────────────────────────────
 // When sharing app with a remote client, paste your ngrok URL here and
 // set USE_NGROK = true. Set back to false for local WiFi testing.
-const USE_NGROK = true;
+const USE_NGROK = false;
 const NGROK_URL = 'https://block-legacy-feof-sherman.trycloudflare.com';
 // ─────────────────────────────────────────────────────────────────────────────
 

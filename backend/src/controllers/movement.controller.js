@@ -158,19 +158,30 @@ const batchCreateMovements = async (req, res) => {
           throw new Error('Invalid quantity');
         }
 
-        const searchConditions = [];
-        if (item.batchNumber) {
-          searchConditions.push({ batchNumber: item.batchNumber });
-        }
-        if (item.productName) {
-          searchConditions.push({ name: { contains: item.productName, mode: 'insensitive' } });
-        }
-
         let product = null;
         if (item.productId) {
           product = await prisma.product.findUnique({ where: { id: item.productId } });
-        } else if (searchConditions.length) {
-          product = await prisma.product.findFirst({ where: { OR: searchConditions } });
+        } else if (item.productName) {
+          if (type === 'STOCK_IN') {
+            // For receiving, require exact name and batch match (or 'UNKNOWN' if no batch)
+            product = await prisma.product.findFirst({
+              where: {
+                name: { equals: item.productName, mode: 'insensitive' },
+                batchNumber: item.batchNumber || 'UNKNOWN'
+              }
+            });
+          } else {
+            // For sales, require exact name and batch. Reject if batch is missing.
+            if (!item.batchNumber) {
+              throw new Error(`Missing batch number. Please specify the batch number when manually selling ${item.productName}.`);
+            }
+            product = await prisma.product.findFirst({
+              where: {
+                name: { equals: item.productName, mode: 'insensitive' },
+                batchNumber: item.batchNumber
+              }
+            });
+          }
         }
 
         if (!product) {
@@ -253,6 +264,40 @@ const batchCreateMovements = async (req, res) => {
           });
         }
 
+        // Expiry notification check
+        const movementExpiry = item.expiryDate ? new Date(item.expiryDate) : product.expiryDate;
+        if (type === 'STOCK_IN' && movementExpiry) {
+          const now = new Date();
+          const threeMonthsFromNow = new Date();
+          threeMonthsFromNow.setMonth(now.getMonth() + 3);
+
+          if (movementExpiry < now) {
+            await prisma.notification.create({
+              data: {
+                type: 'EXPIRY',
+                title: 'Product Expired',
+                message: `${product.name} (Batch: ${item.batchNumber || product.batchNumber || 'N/A'}) has expired.`,
+                severity: 'CRITICAL',
+                userId,
+                productId: product.id,
+                data: { expiryDate: movementExpiry }
+              }
+            });
+          } else if (movementExpiry < threeMonthsFromNow) {
+            await prisma.notification.create({
+              data: {
+                type: 'EXPIRY',
+                title: 'Product Expiring Soon',
+                message: `${product.name} (Batch: ${item.batchNumber || product.batchNumber || 'N/A'}) is expiring soon.`,
+                severity: 'HIGH',
+                userId,
+                productId: product.id,
+                data: { expiryDate: movementExpiry }
+              }
+            });
+          }
+        }
+
         results.push(movement);
       } catch (error) {
         errors.push({ index, item, error: error.message });
@@ -299,7 +344,8 @@ const getMovements = async (req, res) => {
       endDate,
       type,
       productId,
-      userId
+      userId,
+      search
     } = req.query;
 
     // Build filter conditions
@@ -314,6 +360,13 @@ const getMovements = async (req, res) => {
     if (type) where.type = type;
     if (productId) where.productId = productId;
     if (userId) where.userId = userId;
+    
+    if (search) {
+      where.OR = [
+        { party: { contains: search, mode: 'insensitive' } },
+        { product: { name: { contains: search, mode: 'insensitive' } } }
+      ];
+    }
 
     // Get total count
     const total = await prisma.stockMovement.count({ where });
@@ -501,6 +554,40 @@ const createMovement = async (req, res) => {
           }
         }
       });
+    }
+
+    // Expiry notification check
+    const movementExpiry = expiryDate ? new Date(expiryDate) : product.expiryDate;
+    if (type === 'STOCK_IN' && movementExpiry) {
+      const now = new Date();
+      const threeMonthsFromNow = new Date();
+      threeMonthsFromNow.setMonth(now.getMonth() + 3);
+
+      if (movementExpiry < now) {
+        await prisma.notification.create({
+          data: {
+            type: 'EXPIRY',
+            title: 'Product Expired',
+            message: `${product.name} (Batch: ${batchNumber || product.batchNumber || 'N/A'}) has expired.`,
+            severity: 'CRITICAL',
+            userId,
+            productId: product.id,
+            data: { expiryDate: movementExpiry }
+          }
+        });
+      } else if (movementExpiry < threeMonthsFromNow) {
+        await prisma.notification.create({
+          data: {
+            type: 'EXPIRY',
+            title: 'Product Expiring Soon',
+            message: `${product.name} (Batch: ${batchNumber || product.batchNumber || 'N/A'}) is expiring soon.`,
+            severity: 'HIGH',
+            userId,
+            productId: product.id,
+            data: { expiryDate: movementExpiry }
+          }
+        });
+      }
     }
 
     res.status(201).json({

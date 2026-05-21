@@ -22,7 +22,8 @@ import {
   Dialog,
   TextInput,
   Snackbar,
-  Menu
+  Menu,
+  Searchbar
 } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
@@ -42,6 +43,7 @@ export default function InputOutputScreen({ navigation }) {
   const [recentMovements, setRecentMovements] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   
   // State for form
   const [formVisible, setFormVisible] = useState(false);
@@ -61,6 +63,8 @@ export default function InputOutputScreen({ navigation }) {
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [productSearch, setProductSearch] = useState('');
   const [productMenuVisible, setProductMenuVisible] = useState(false);
+  const [stagedManualItems, setStagedManualItems] = useState([]);
+
   
   // State for CSV import
   const [importing, setImporting] = useState(false);
@@ -96,10 +100,10 @@ export default function InputOutputScreen({ navigation }) {
     requestCameraPermission();
   }, []);
 
-  // Load data when mode changes
+  // Load data when mode or search changes
   useEffect(() => {
     loadMovements();
-  }, [mode]);
+  }, [mode, searchQuery]);
 
   const loadInitialData = async () => {
     try {
@@ -133,6 +137,9 @@ export default function InputOutputScreen({ navigation }) {
         limit: 10,
         type: mode === 'in' ? 'STOCK_IN' : 'STOCK_OUT'
       };
+      if (searchQuery && searchQuery.trim() !== '') {
+        params.search = searchQuery.trim();
+      }
       const response = await MovementService.getMovements(params);
       if (response.success) {
         setRecentMovements(response.data);
@@ -213,8 +220,9 @@ export default function InputOutputScreen({ navigation }) {
   };
 
   const validateForm = () => {
-    if (!formData.productId) {
-      Alert.alert('Error', 'Please select a product');
+    const hasProduct = formData.productId || (mode === 'in' && productSearch.trim().length > 0);
+    if (!hasProduct) {
+      Alert.alert('Error', mode === 'in' ? 'Please select or enter a product name' : 'Please select a product');
       return false;
     }
     if (!formData.quantity || parseInt(formData.quantity) <= 0) {
@@ -228,61 +236,79 @@ export default function InputOutputScreen({ navigation }) {
     return true;
   };
 
-  const handleSubmit = async (keepOpen = false) => {
+  const handleSubmit = (keepOpen = false) => {
     if (!validateForm()) return;
 
+    const stagedItem = {
+      type: mode === 'in' ? 'STOCK_IN' : 'STOCK_OUT',
+      productId: formData.productId || undefined,
+      productName: formData.productId ? undefined : productSearch.trim(),
+      quantity: parseInt(formData.quantity),
+      party: formData.party,
+      invoiceNo: formData.invoiceNo,
+      notes: formData.notes,
+      price: parseFloat(formData.price) || undefined,
+      batchNumber: formData.batchNumber || undefined,
+      expiryDate: formData.expiryDate || undefined
+    };
+
+    setStagedManualItems([...stagedManualItems, stagedItem]);
+
+    if (keepOpen) {
+      // Carry forward bill-level fields, clear product-specific fields
+      setFormData({
+        ...formData,
+        productId: '',
+        quantity: '',
+        notes: '',
+        price: '',
+        batchNumber: ''
+      });
+      setProductSearch('');
+      showSnackbar(`Added to staging! Add next product.`);
+    } else {
+      setFormVisible(false);
+      setFormData({
+        productId: '',
+        quantity: '',
+        party: '',
+        invoiceNo: '',
+        notes: '',
+        price: '',
+        batchNumber: '',
+        expiryDate: ''
+      });
+      setProductSearch('');
+      showSnackbar(`Added to staging! Submit from main screen.`);
+    }
+  };
+
+  const handleBatchSubmit = async () => {
+    if (stagedManualItems.length === 0) return;
+    
     try {
       setLoading(true);
-      
-      const movementData = {
-        type: mode === 'in' ? 'STOCK_IN' : 'STOCK_OUT',
-        productId: formData.productId,
-        quantity: parseInt(formData.quantity),
-        party: formData.party,
-        invoiceNo: formData.invoiceNo,
-        notes: formData.notes,
-        price: parseFloat(formData.price) || undefined,
-        batchNumber: formData.batchNumber || undefined,
-        expiryDate: formData.expiryDate || undefined
-      };
-
-      const response = await MovementService.createMovement(movementData);
+      // We pass the common invoice/party from the first item to the batch endpoint if needed,
+      // but MovementService.createBatchMovements just takes an array of items.
+      const response = await MovementService.createBatchMovements(stagedManualItems);
       
       if (response.success) {
-        if (keepOpen) {
-          // Carry forward bill-level fields, clear product-specific fields
-          setFormData({
-            productId: '',
-            quantity: '',
-            party: formData.party,       // ✅ carry forward
-            invoiceNo: formData.invoiceNo, // ✅ carry forward
-            notes: '',
-            price: '',
-            batchNumber: '',
-            expiryDate: formData.expiryDate // ✅ carry forward
-          });
-          setProductSearch('');
-          showSnackbar(`Saved! Add next product from the same bill.`);
+        if (response.data && response.data.errors && response.data.errors.length > 0) {
+          Alert.alert(
+            'Partial Success', 
+            `Saved ${response.data.processed || 0} items.\nFailed to save ${response.data.errors.length} items (Check details, e.g. insufficient quantity).`
+          );
         } else {
-          setFormVisible(false);
-          setFormData({
-            productId: '',
-            quantity: '',
-            party: '',
-            invoiceNo: '',
-            notes: '',
-            price: '',
-            batchNumber: '',
-            expiryDate: ''
-          });
-          setProductSearch('');
-          showSnackbar(`Stock ${mode === 'in' ? 'received' : 'sold'} successfully`);
+          showSnackbar(`Successfully saved ${stagedManualItems.length} items!`);
         }
-        await Promise.all([loadStats(), loadMovements()]);
+        setStagedManualItems([]);
+        loadInitialData();
+      } else {
+        Alert.alert('Error', response.message || 'Failed to save items');
       }
     } catch (error) {
-      console.error('Error creating movement:', error);
-      Alert.alert('Error', error.message || 'Failed to record movement');
+      console.error('Batch submit error:', error);
+      Alert.alert('Error', 'Something went wrong while saving items.');
     } finally {
       setLoading(false);
     }
@@ -570,7 +596,7 @@ export default function InputOutputScreen({ navigation }) {
             <Ionicons 
               name="arrow-down-circle" 
               size={24} 
-              color={mode === 'in' ? '#007AFF' : '#666'} 
+              color={mode === 'in' ? '#0F172A' : '#9CA3AF'} 
             />
             <Text style={[styles.modeText, mode === 'in' && styles.modeTextActive]}>
               STOCK IN
@@ -584,7 +610,7 @@ export default function InputOutputScreen({ navigation }) {
             <Ionicons 
               name="arrow-up-circle" 
               size={24} 
-              color={mode === 'out' ? '#007AFF' : '#666'} 
+              color={mode === 'out' ? '#0F172A' : '#9CA3AF'} 
             />
             <Text style={[styles.modeText, mode === 'out' && styles.modeTextActive]}>
               STOCK OUT
@@ -593,47 +619,24 @@ export default function InputOutputScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Compact Stats Cards - FIXED UI */}
-      <View style={styles.compactStatsContainer}>
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.compactStatsContent}
-        >
-          <View style={styles.compactStatItem}>
-            <Text style={[styles.compactStatValue, { color: mode === 'in' ? '#4CAF50' : '#F44336' }]}>
-              {mode === 'in' ? stats.today.in : stats.today.out}
-            </Text>
-            <Text style={styles.compactStatLabel}>Today</Text>
-          </View>
-          
-          <View style={styles.compactStatDivider} />
-          
-          <View style={styles.compactStatItem}>
-            <Text style={[styles.compactStatValue, { color: mode === 'in' ? '#4CAF50' : '#F44336' }]}>
-              {mode === 'in' ? stats.week.in : stats.week.out}
-            </Text>
-            <Text style={styles.compactStatLabel}>Week</Text>
-          </View>
-          
-          <View style={styles.compactStatDivider} />
-          
-          <View style={styles.compactStatItem}>
-            <Text style={[styles.compactStatValue, { color: mode === 'in' ? '#4CAF50' : '#F44336' }]}>
-              {mode === 'in' ? stats.month.in : stats.month.out}
-            </Text>
-            <Text style={styles.compactStatLabel}>Month</Text>
-          </View>
-          
-          <View style={styles.compactStatDivider} />
-          
-          <View style={styles.compactStatItem}>
-            <Text style={[styles.compactStatValue, { color: mode === 'in' ? '#4CAF50' : '#F44336' }]}>
-              {mode === 'in' ? stats.total.in : stats.total.out}
-            </Text>
-            <Text style={styles.compactStatLabel}>Total</Text>
-          </View>
-        </ScrollView>
+      {/* Improved Stats Row */}
+      <View style={styles.statsRow}>
+        <View style={styles.statBox}>
+          <Text style={[styles.statValue, { color: mode === 'in' ? '#16A34A' : '#DC2626' }]}>{mode === 'in' ? stats.today.in : stats.today.out}</Text>
+          <Text style={styles.statLabel}>Today</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={[styles.statValue, { color: mode === 'in' ? '#16A34A' : '#DC2626' }]}>{mode === 'in' ? stats.week.in : stats.week.out}</Text>
+          <Text style={styles.statLabel}>Week</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={[styles.statValue, { color: mode === 'in' ? '#16A34A' : '#DC2626' }]}>{mode === 'in' ? stats.month.in : stats.month.out}</Text>
+          <Text style={styles.statLabel}>Month</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={[styles.statValue, { color: mode === 'in' ? '#16A34A' : '#DC2626' }]}>{mode === 'in' ? stats.total.in : stats.total.out}</Text>
+          <Text style={styles.statLabel}>Total</Text>
+        </View>
       </View>
 
       {/* Action Buttons */}
@@ -670,6 +673,60 @@ export default function InputOutputScreen({ navigation }) {
         </Button>
       </View>
 
+      {/* Staged Manual Items Preview */}
+      {stagedManualItems.length > 0 && (
+        <View style={styles.stagedContainer}>
+          <View style={styles.stagedHeader}>
+            <Title style={styles.stagedTitle}>Staged for {mode === 'in' ? 'Receiving' : 'Sale'} ({stagedManualItems.length})</Title>
+            <Button 
+              mode="contained" 
+              onPress={handleBatchSubmit}
+              loading={loading}
+              icon="check-all"
+              style={styles.submitAllButton}
+            >
+              Submit All to Inventory
+            </Button>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.stagedList}>
+            {stagedManualItems.map((item, index) => (
+              <Card key={index} style={styles.stagedCard}>
+                <Card.Content>
+                  <View style={styles.stagedCardHeader}>
+                    <Text style={styles.stagedItemName} numberOfLines={1}>
+                      {item.productName || 'Existing Product ID: ' + item.productId?.substring(0, 5)}
+                    </Text>
+                    <IconButton
+                      icon="close"
+                      size={16}
+                      onPress={() => {
+                        const newItems = [...stagedManualItems];
+                        newItems.splice(index, 1);
+                        setStagedManualItems(newItems);
+                      }}
+                      style={styles.stagedDeleteBtn}
+                    />
+                  </View>
+                  <Text style={styles.stagedDetail}>Qty: {item.quantity}</Text>
+                  {item.price && <Text style={styles.stagedDetail}>Price: ₹{item.price}</Text>}
+                </Card.Content>
+              </Card>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Search Bar for Party/Product */}
+      <View style={styles.searchContainer}>
+        <Searchbar
+          placeholder="Search Party or Product..."
+          onChangeText={setSearchQuery}
+          value={searchQuery}
+          style={styles.searchbar}
+          elevation={1}
+        />
+      </View>
+
       {/* Recent Movements */}
       <View style={styles.recentHeader}>
         <Title>Recent {mode === 'in' ? 'Receivings' : 'Sales'}</Title>
@@ -701,8 +758,8 @@ export default function InputOutputScreen({ navigation }) {
                   <Chip 
                     mode="outlined"
                     style={{ 
-                      borderColor: movement.type === 'STOCK_IN' ? '#4CAF50' : '#F44336',
-                      backgroundColor: movement.type === 'STOCK_IN' ? '#E8F5E9' : '#FFEBEE'
+                      borderColor: movement.type === 'STOCK_IN' ? '#16A34A' : '#DC2626',
+                      backgroundColor: movement.type === 'STOCK_IN' ? '#DCFCE7' : '#FEE2E2'
                     }}
                   >
                     {movement.type === 'STOCK_IN' ? 'IN' : 'OUT'} {movement.quantity}
@@ -848,21 +905,14 @@ export default function InputOutputScreen({ navigation }) {
             </ScrollView>
           </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={() => setFormVisible(false)}>Cancel</Button>
-            <Button
-              mode="outlined"
+            <Button onPress={() => setFormVisible(false)}>Close</Button>
+            <Button 
+              mode="contained" 
               onPress={() => handleSubmit(true)}
               loading={loading}
               icon="plus"
             >
-              Save & Next
-            </Button>
-            <Button 
-              mode="contained" 
-              onPress={() => handleSubmit(false)}
-              loading={loading}
-            >
-              Save
+              Add to Queue
             </Button>
           </Dialog.Actions>
         </Dialog>
@@ -1050,41 +1100,46 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   modeTextActive: {
-    color: '#007AFF',
+    color: '#0F172A',
     fontWeight: 'bold',
   },
-  // NEW COMPACT STATS STYLES
-  compactStatsContainer: {
-    marginTop: 8,
-    marginBottom: 12,
-    height: 65,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  compactStatsContent: {
+  // Improved Stats Row
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    alignItems: 'center',
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    marginBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
-  compactStatItem: {
+  statBox: {
     alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
     minWidth: 70,
   },
-  compactStatValue: {
-    fontSize: 20,
+  statValue: {
+    fontSize: 18,
     fontWeight: 'bold',
+    color: '#1E293B',
   },
-  compactStatLabel: {
+  statLabel: {
     fontSize: 11,
-    color: '#666',
-    marginTop: 2,
+    color: '#64748B',
+    marginTop: 4,
   },
-  compactStatDivider: {
-    width: 1,
-    height: 35,
-    backgroundColor: '#e0e0e0',
-    marginHorizontal: 12,
+  searchContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  searchbar: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    height: 48,
   },
   // Action Buttons
   actionButtons: {
@@ -1197,5 +1252,60 @@ const styles = StyleSheet.create({
   productMenu: {
     width: '100%',
     marginTop: 40,
+  },
+  stagedContainer: {
+    backgroundColor: '#F8FAFC',
+    padding: 16,
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  stagedHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  stagedTitle: {
+    fontSize: 16,
+    color: '#0F172A',
+    fontWeight: 'bold',
+  },
+  submitAllButton: {
+    borderRadius: 8,
+    backgroundColor: '#16A34A',
+  },
+  stagedList: {
+    paddingBottom: 8,
+  },
+  stagedCard: {
+    width: 200,
+    marginRight: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    elevation: 0,
+  },
+  stagedCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  stagedItemName: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#0F172A',
+    flex: 1,
+  },
+  stagedDeleteBtn: {
+    margin: 0,
+    padding: 0,
+  },
+  stagedDetail: {
+    fontSize: 12,
+    color: '#64748B',
   },
 });

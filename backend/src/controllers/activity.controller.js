@@ -52,9 +52,10 @@ const getActivities = async (req, res) => {
     // Search filter
     if (search && search.trim() !== '') {
       where.OR = [
-        { details: { contains: search, mode: 'insensitive' } },
         { entityType: { contains: search, mode: 'insensitive' } },
-        { action: { contains: search, mode: 'insensitive' } }
+        { action: { contains: search, mode: 'insensitive' } },
+        { user: { name: { contains: search, mode: 'insensitive' } } },
+        { product: { name: { contains: search, mode: 'insensitive' } } }
       ];
       console.log('📋 Search filter:', search);
     }
