@@ -8,6 +8,7 @@ const getProducts = async (req, res) => {
       page = 1, 
       limit = 10, 
       search, 
+      invoiceNo,
       category, 
       warehouseId,
       status,
@@ -17,6 +18,17 @@ const getProducts = async (req, res) => {
 
     // Build filter conditions
     const where = {};
+    
+    // Invoice number search — find products linked to this invoice via StockMovement
+    if (invoiceNo) {
+      const movements = await prisma.stockMovement.findMany({
+        where: { invoiceNo: { contains: invoiceNo, mode: 'insensitive' } },
+        select: { productId: true },
+        distinct: ['productId']
+      });
+      const productIds = movements.map(m => m.productId);
+      where.id = { in: productIds };
+    }
     
     if (search) {
       where.OR = [

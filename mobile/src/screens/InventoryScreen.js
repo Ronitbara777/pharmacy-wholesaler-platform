@@ -45,6 +45,7 @@ export default function InventoryScreen({ navigation }) {
   // UI State
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
   const [searchQuery, setSearchQuery] = useState('');
+  const [invoiceSearch, setInvoiceSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedWarehouse, setSelectedWarehouse] = useState('All');
   const [sortBy, setSortBy] = useState('name');
@@ -89,7 +90,7 @@ export default function InventoryScreen({ navigation }) {
     if (!loading) {
       loadProducts();
     }
-  }, [page, selectedCategory, selectedWarehouse, searchQuery, sortBy]);
+  }, [page, selectedCategory, selectedWarehouse, searchQuery, invoiceSearch, sortBy]);
 
   const loadInitialData = async () => {
     try {
@@ -144,6 +145,10 @@ export default function InventoryScreen({ navigation }) {
       params.search = searchQuery.trim();
     }
 
+    if (invoiceSearch && invoiceSearch.trim() !== '') {
+      params.invoiceNo = invoiceSearch.trim();
+    }
+
     if (selectedCategory && selectedCategory !== 'All') {
       params.category = selectedCategory;
     }
@@ -195,7 +200,14 @@ export default function InventoryScreen({ navigation }) {
 
   const handleSearch = (query) => {
     setSearchQuery(query);
-    setPage(1); // Reset to first page on new search
+    setInvoiceSearch(''); // Clear invoice search when doing name search
+    setPage(1);
+  };
+
+  const handleInvoiceSearch = (query) => {
+    setInvoiceSearch(query);
+    setSearchQuery(''); // Clear name search when doing invoice search
+    setPage(1);
   };
 
   const handleCategoryFilter = (category) => {
@@ -679,6 +691,24 @@ export default function InventoryScreen({ navigation }) {
         value={searchQuery}
         style={styles.searchbar}
       />
+      <Searchbar
+        placeholder="Search by Bill / Invoice No..."
+        onChangeText={handleInvoiceSearch}
+        value={invoiceSearch}
+        style={[styles.searchbar, { marginTop: 0 }]}
+        icon="file-document-outline"
+      />
+      {invoiceSearch.trim() !== '' && (
+        <View style={{ paddingHorizontal: 16, marginBottom: 4 }}>
+          <Chip
+            icon="close"
+            onClose={() => handleInvoiceSearch('')}
+            style={{ alignSelf: 'flex-start' }}
+          >
+            Invoice: {invoiceSearch}
+          </Chip>
+        </View>
+      )}
 
       {/* Filter Chips */}
      

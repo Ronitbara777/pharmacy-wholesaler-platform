@@ -38,16 +38,20 @@ app.use('/api', limiter);
   credentials: true
 }));*/
 
-app.use(cors({
-  origin: [
-    'http://localhost:8081',
-    'http://localhost:19006',
-    'https://ti3qeba-anonymous-8081.exp.direct', // Your Expo domain
-    'https://*.exp.direct', // Allow all Expo domains
-    'https://*.expo.dev' // Allow Expo dev domains
-  ],
-  credentials: true
-}));
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || '*');
+  
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  next();
+});
 
 // Compression
 app.use(compression());

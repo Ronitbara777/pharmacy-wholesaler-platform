@@ -228,7 +228,7 @@ export default function InputOutputScreen({ navigation }) {
     return true;
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (keepOpen = false) => {
     if (!validateForm()) return;
 
     try {
@@ -249,20 +249,36 @@ export default function InputOutputScreen({ navigation }) {
       const response = await MovementService.createMovement(movementData);
       
       if (response.success) {
-        setFormVisible(false);
-        setFormData({
-          productId: '',
-          quantity: '',
-          party: '',
-          invoiceNo: '',
-          notes: '',
-          price: '',
-          batchNumber: '',
-          expiryDate: ''
-        });
-        setProductSearch('');
+        if (keepOpen) {
+          // Carry forward bill-level fields, clear product-specific fields
+          setFormData({
+            productId: '',
+            quantity: '',
+            party: formData.party,       // ✅ carry forward
+            invoiceNo: formData.invoiceNo, // ✅ carry forward
+            notes: '',
+            price: '',
+            batchNumber: '',
+            expiryDate: formData.expiryDate // ✅ carry forward
+          });
+          setProductSearch('');
+          showSnackbar(`Saved! Add next product from the same bill.`);
+        } else {
+          setFormVisible(false);
+          setFormData({
+            productId: '',
+            quantity: '',
+            party: '',
+            invoiceNo: '',
+            notes: '',
+            price: '',
+            batchNumber: '',
+            expiryDate: ''
+          });
+          setProductSearch('');
+          showSnackbar(`Stock ${mode === 'in' ? 'received' : 'sold'} successfully`);
+        }
         await Promise.all([loadStats(), loadMovements()]);
-        showSnackbar(`Stock ${mode === 'in' ? 'received' : 'sold'} successfully`);
       }
     } catch (error) {
       console.error('Error creating movement:', error);
@@ -305,14 +321,28 @@ export default function InputOutputScreen({ navigation }) {
               notes: item.notes || ''
             }));
 
-            setReceiptItems(items.length ? items : [{ productName: '', batchNumber: '', quantity: '1', price: '', notes: '' }]);
-            setReceiptInvoiceNo(response.data.invoiceNo || '');
-            setReceiptParty(response.data.party || '');
-            
-            // Re-use the receipt preview screen for PDFs!
-            setReceiptImageUri(null); // No image to show for PDF
-            setReceiptPreviewVisible(true);
-            showSnackbar(response.message);
+            const openPreview = () => {
+              setReceiptItems(items.length ? items : [{ productName: '', batchNumber: '', quantity: '1', price: '', notes: '' }]);
+              setReceiptInvoiceNo(response.data.invoiceNo || '');
+              setReceiptParty(response.data.party || '');
+              setReceiptImageUri(null);
+              setReceiptPreviewVisible(true);
+            };
+
+            // Duplicate Invoice Warning
+            if (response.duplicateWarning) {
+              Alert.alert(
+                'Duplicate Invoice Detected',
+                `${response.duplicateWarning}\n\nDo you still want to proceed with importing?`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Import Anyway', style: 'destructive', onPress: openPreview }
+                ]
+              );
+            } else {
+              openPreview();
+              showSnackbar(response.message);
+            }
           } else {
             throw new Error(response.message || 'Unable to parse PDF');
           }
@@ -819,9 +849,17 @@ export default function InputOutputScreen({ navigation }) {
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setFormVisible(false)}>Cancel</Button>
+            <Button
+              mode="outlined"
+              onPress={() => handleSubmit(true)}
+              loading={loading}
+              icon="plus"
+            >
+              Save & Next
+            </Button>
             <Button 
               mode="contained" 
-              onPress={handleSubmit}
+              onPress={() => handleSubmit(false)}
               loading={loading}
             >
               Save

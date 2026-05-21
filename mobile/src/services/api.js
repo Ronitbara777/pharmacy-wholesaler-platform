@@ -3,6 +3,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
+// ─── REMOTE TESTING CONFIG ──────────────────────────────────────────────────
+// When sharing app with a remote client, paste your ngrok URL here and
+// set USE_NGROK = true. Set back to false for local WiFi testing.
+const USE_NGROK = true;
+const NGROK_URL = 'https://block-legacy-feof-sherman.trycloudflare.com';
+// ─────────────────────────────────────────────────────────────────────────────
+
 const DEFAULT_HOST = '192.168.1.5';
 const PORT = '5000';
 const API_PREFIX = '/api/v1';
@@ -70,15 +77,21 @@ const getBackendHost = () => {
 };
 
 const YOUR_IP = getBackendHost();
-const BASE_URL = `http://${YOUR_IP}:${PORT}${API_PREFIX}`;
+const BASE_URL = USE_NGROK
+  ? `${NGROK_URL}${API_PREFIX}`
+  : `http://${YOUR_IP}:${PORT}${API_PREFIX}`;
 
 console.log('📡 Platform:', Platform.OS);
 console.log('📡 API Base URL:', BASE_URL);
+console.log(USE_NGROK ? '🌐 Using NGROK tunnel' : '📶 Using local WiFi');
 
 const api = axios.create({
   baseURL: BASE_URL,
   headers: {
     'Content-Type': 'application/json',
+    // Bypass interstitial pages from tunnel services
+    'bypass-tunnel-reminder': 'true',       // localtunnel bypass
+    'ngrok-skip-browser-warning': 'true',   // ngrok bypass
   },
   timeout: 30000, // 30 second timeout for long requests like OCR
 });
@@ -87,7 +100,7 @@ const api = axios.create({
 api.interceptors.request.use(
   async (config) => {
     console.log('📤 Request:', config.method.toUpperCase(), config.url);
-    
+
     try {
       const token = await AsyncStorage.getItem('token');
       if (token) {
@@ -97,7 +110,7 @@ api.interceptors.request.use(
     } catch (error) {
       console.error('❌ Error getting token:', error);
     }
-    
+
     return config;
   },
   (error) => {
@@ -114,12 +127,12 @@ api.interceptors.response.use(
   },
   async (error) => {
     console.error('❌ API Error:', error.message);
-    
+
     if (error.code === 'ECONNABORTED') {
       console.error('❌ Request timeout');
       return Promise.reject({ message: 'Request timeout - server too slow' });
     }
-    
+
     if (error.response) {
       // The request was made and the server responded with a status code
       console.error('❌ Error status:', error.response.status);
@@ -128,11 +141,11 @@ api.interceptors.response.use(
     } else if (error.request) {
       // The request was made but no response was received
       console.error('❌ No response received - is the server running?');
-      return Promise.reject({ 
+      return Promise.reject({
         message: 'Cannot connect to server. Make sure:\n' +
-                '1. Backend is running (npm start in backend folder)\n' +
-                '2. Phone and computer are on same WiFi\n' +
-                '3. IP address is correct: ' + YOUR_IP
+          '1. Backend is running (npm start in backend folder)\n' +
+          '2. Phone and computer are on same WiFi\n' +
+          '3. IP address is correct: ' + YOUR_IP
       });
     } else {
       // Something happened in setting up the request

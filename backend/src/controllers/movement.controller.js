@@ -776,9 +776,21 @@ const importPDF = async (req, res) => {
       });
     }
 
+    // ✅ Duplicate Invoice Check
+    let duplicateWarning = null;
+    if (parsedData.invoiceNo) {
+      const existingCount = await prisma.stockMovement.count({
+        where: { invoiceNo: parsedData.invoiceNo }
+      });
+      if (existingCount > 0) {
+        duplicateWarning = `Bill No. "${parsedData.invoiceNo}" has already been imported (${existingCount} items found).`;
+      }
+    }
+
     res.json({
       success: true,
       message: `Extracted ${parsedData.items.length} items from PDF`,
+      duplicateWarning,
       data: parsedData
     });
 
