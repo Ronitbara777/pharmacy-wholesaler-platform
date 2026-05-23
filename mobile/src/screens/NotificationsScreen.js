@@ -28,10 +28,8 @@ import { Ionicons } from '@expo/vector-icons';
 import AlertService from '../services/alert.service';
 import { useFocusEffect } from '@react-navigation/native';
 
-console.log('🔔 NotificationsScreen loaded');
 
 export default function NotificationsScreen({ navigation }) {
-  console.log('🔔 NotificationsScreen rendering');
   
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -80,11 +78,9 @@ export default function NotificationsScreen({ navigation }) {
 
   const loadNotifications = async () => {
     try {
-      console.log('🔔 Loading notifications...');
       const response = await AlertService.getNotifications();
       
       if (response.success) {
-        console.log(`🔔 Loaded ${response.data.length} notifications`);
         setNotifications(response.data);
       }
     } catch (error) {

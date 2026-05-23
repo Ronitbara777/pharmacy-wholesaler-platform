@@ -31,10 +31,8 @@ import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import MovementService from '../services/movement.service';
 
-console.log('📥 InputOutputScreen loaded');
 
 export default function InputOutputScreen({ navigation }) {
-  console.log('📥 InputOutputScreen rendering');
   
   // State for mode selection
   const [mode, setMode] = useState('in'); // 'in' or 'out'

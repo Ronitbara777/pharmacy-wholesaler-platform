@@ -88,16 +88,12 @@ const scanReceipt = async (req, res) => {
       });
     }
 
-    console.log('📄 Receipt received');
-    console.log('File size:', req.file.size);
 
     /**
      * IMPORTANT:
      * createWorker must be awaited
      */
-    const worker = await createWorker('eng', 1, {
-      logger: (m) => console.log(m)
-    });
+    const worker = await createWorker('eng', 1);
 
     /**
      * OCR
@@ -112,7 +108,6 @@ const scanReceipt = async (req, res) => {
      */
     await worker.terminate();
 
-    console.log('✅ OCR SUCCESS');
 
     /**
      * Parse receipt text
@@ -851,7 +846,6 @@ const importPDF = async (req, res) => {
       });
     }
 
-    console.log('📄 PDF received for extraction');
     const pdfData = await pdf(req.file.buffer);
     
     const parsedData = parsePDFText(pdfData.text);

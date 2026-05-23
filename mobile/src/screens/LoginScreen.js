@@ -22,10 +22,8 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import AuthService from '../services/auth.service';
 
-console.log('🔐 LoginScreen loaded');
 
 export default function LoginScreen({ navigation }) {
-  console.log('🔐 LoginScreen rendering');
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -71,19 +69,15 @@ export default function LoginScreen({ navigation }) {
 const handleLogin = () => {
   if (!validateForm()) return;
   
-  console.log('🔐 Attempting login with:', { email });
   setLoading(true);
   
   // Use .then/.catch instead of async/await to avoid warnings
   AuthService.login(email, password)
     .then((response) => {
-      console.log('📡 Login response:', response);
       
       if (response.success) {
-        console.log('✅ Login successful, navigating to Main');
         navigation.replace('Main');
       } else {
-        console.log('❌ Login failed:', response.message);
         Alert.alert('Login Failed', response.message || 'Invalid credentials');
       }
     })

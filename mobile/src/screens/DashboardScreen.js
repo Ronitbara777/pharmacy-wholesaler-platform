@@ -33,12 +33,10 @@ import {
 import AuthService from '../services/auth.service';
 import DashboardService from '../services/dashboard.service';
 
-console.log('📊 DashboardScreen loaded');
 
 const screenWidth = Dimensions.get('window').width;
 
 export default function DashboardScreen({ navigation }) {
-  console.log('📊 DashboardScreen rendering');
 
   React.useLayoutEffect(() => {
     navigation.setOptions({
@@ -105,7 +103,6 @@ export default function DashboardScreen({ navigation }) {
   // Load all dashboard data
   const loadDashboardData = async () => {
     try {
-      console.log('📊 Loading dashboard data...');
       
       // Fetch all data in parallel
       const [statsResponse, productsResponse, activitiesResponse, warehousesResponse, salesResponse] = await Promise.all([
@@ -116,7 +113,6 @@ export default function DashboardScreen({ navigation }) {
         DashboardService.getSalesData(),
       ]);
 
-      console.log('📊 Stats response:', statsResponse);
 
       // Update stats
       if (statsResponse?.success) {

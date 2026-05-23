@@ -4,17 +4,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const AuthService = {
   // Login user
   login: async (email, password) => {
-    console.log('🔑 AuthService.login called with:', { email });
     try {
-      console.log('📤 Sending login request to API...');
       const response = await api.post('/auth/login', { email, password });
-      console.log('📥 API response received:', response);
       
       if (response.success) {
-        console.log('✅ Login successful, storing token...');
         await AsyncStorage.setItem('token', response.data.token);
         await AsyncStorage.setItem('user', JSON.stringify(response.data.user));
-        console.log('✅ Token stored successfully');
       }
       
       return response;
@@ -79,7 +74,6 @@ const AuthService = {
     try {
       await AsyncStorage.removeItem('token');
       await AsyncStorage.removeItem('user');
-      console.log('✅ Logout successful');
     } catch (error) {
       console.error('❌ Logout error:', error);
     }

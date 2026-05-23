@@ -30,10 +30,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import InventoryService from '../services/inventory.service';
 
-console.log('📦 InventoryScreen loaded');
 
 export default function InventoryScreen({ navigation }) {
-  console.log('📦 InventoryScreen rendering');
   
   // State for data
   const [products, setProducts] = useState([]);
@@ -175,15 +173,6 @@ export default function InventoryScreen({ navigation }) {
 
   const loadProducts = async () => {
   try {
-    console.log('📦 ===== LOADING PRODUCTS =====');
-    console.log('📦 Current filters:', {
-      page,
-      limit,
-      search: searchQuery,
-      category: selectedCategory,
-      warehouse: selectedWarehouse,
-      sortBy
-    });
 
     const params = {
       page,
@@ -209,19 +198,13 @@ export default function InventoryScreen({ navigation }) {
       params.warehouseId = selectedWarehouse;
     }
 
-    console.log('📦 Request params:', params);
 
     const response = await InventoryService.getProducts(params);
     
-    console.log('📦 Full API Response:', JSON.stringify(response, null, 2));
 
     if (response && response.success) {
-      console.log('📦 Products data:', response.data);
-      console.log('📦 Number of products:', response.data?.length || 0);
-      console.log('📦 Pagination:', response.pagination);
       
       if (response.data && response.data.length > 0) {
-        console.log('📦 First product:', response.data[0]);
         // Group by product name and company
         const groupedMap = new Map();
         response.data.forEach(p => {
@@ -241,14 +224,12 @@ export default function InventoryScreen({ navigation }) {
         });
         setProducts(Array.from(groupedMap.values()));
       } else {
-        console.log('📦 No products returned from API');
         setProducts([]);
       }
       
       setTotalPages(response.pagination?.pages || 1);
       setTotalProducts(response.pagination?.total || 0);
     } else {
-      console.log('📦 API response not successful:', response);
       setProducts([]);
     }
   } catch (error) {
@@ -256,7 +237,6 @@ export default function InventoryScreen({ navigation }) {
     console.error('❌ Error details:', error.response?.data || error.message);
     Alert.alert('Error', 'Failed to load products');
   } finally {
-    console.log('📦 ===== LOADING COMPLETE =====');
   }
 };
 
@@ -320,9 +300,6 @@ export default function InventoryScreen({ navigation }) {
   };
 
   const handleEditProduct = (product) => {
-  console.log('✏️ EDIT - Product clicked:', product);
-  console.log('✏️ EDIT - Product ID:', product.id);
-  console.log('✏️ EDIT - Product data:', JSON.stringify(product, null, 2));
   
   setIsEditing(true);
   setSelectedProduct(product);
@@ -344,8 +321,6 @@ export default function InventoryScreen({ navigation }) {
 };
 
   const handleDeleteProduct = (product) => {
-  console.log('🗑️ DELETE - Attempting to delete:', product);
-  console.log('🗑️ DELETE - Product ID:', product.id);
   
   Alert.alert(
     'Delete Product',
@@ -357,23 +332,18 @@ export default function InventoryScreen({ navigation }) {
         style: 'destructive',
         onPress: async () => {
           try {
-            console.log('🗑️ DELETE - Sending delete request for ID:', product.id);
             
             const response = await InventoryService.deleteProduct(product.id);
             
-            console.log('🗑️ DELETE - Response:', response);
             
             if (response && response.success) {
-              console.log('🗑️ DELETE - Success, reloading products...');
               Alert.alert('Success', 'Product deleted successfully');
               
               // Reload products
               await loadProducts();
               
               // Log the new state
-              console.log('🗑️ DELETE - Products after reload:', products.length);
             } else {
-              console.log('🗑️ DELETE - Failed:', response);
               Alert.alert('Error', response?.message || 'Failed to delete product');
             }
           } catch (error) {
@@ -389,9 +359,6 @@ export default function InventoryScreen({ navigation }) {
 };
 
   const handleSaveProduct = async () => {
-  console.log('💾 SAVE - Starting save operation');
-  console.log('💾 SAVE - Is editing:', isEditing);
-  console.log('💾 SAVE - Form data:', formData);
   
   // Validate required fields
   const requiredFields = [
@@ -442,18 +409,14 @@ export default function InventoryScreen({ navigation }) {
       reorderLevel: parseInt(formData.reorderLevel) || 100,
     };
 
-    console.log('💾 SAVE - Product data to send:', productData);
 
     let response;
     if (isEditing) {
-      console.log('💾 SAVE - Updating product ID:', selectedProduct.id);
       response = await InventoryService.updateProduct(selectedProduct.id, productData);
     } else {
-      console.log('💾 SAVE - Creating new product');
       response = await InventoryService.createProduct(productData);
     }
 
-    console.log('💾 SAVE - Response:', response);
 
     if (response && response.success) {
       Alert.alert('Success', `Product ${isEditing ? 'updated' : 'created'} successfully`);
@@ -476,12 +439,9 @@ export default function InventoryScreen({ navigation }) {
       });
       
       // Reload products
-      console.log('💾 SAVE - Reloading products...');
       await loadProducts();
-      console.log('💾 SAVE - Products reloaded');
       
     } else {
-      console.log('💾 SAVE - Failed:', response);
       Alert.alert('Error', response?.message || 'Failed to save product');
     }
   } catch (error) {

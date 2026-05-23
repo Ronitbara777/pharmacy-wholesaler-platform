@@ -33,25 +33,10 @@ const limiter = rateLimit({
 app.use('/api', limiter);
 
 // CORS
-/*app.use(cors({
-  origin: process.env.CORS_ORIGIN?.split(',') || '*',
+app.use(cors({
+  origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*',
   credentials: true
-}));*/
-
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || '*');
-  
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
-  }
-  next();
-});
+}));
 
 // Compression
 app.use(compression());
@@ -84,8 +69,6 @@ app.use(`${process.env.API_PREFIX}/movements`, movementRoutes);
 app.use(`${process.env.API_PREFIX}/notifications`, notificationRoutes);
 app.use(`${process.env.API_PREFIX}/activities`, activityRoutes);
 app.use(`${process.env.API_PREFIX}/import`, importRoutes);
-app.use(`${process.env.API_PREFIX}/activities`, activityRoutes);
-app.use(`${process.env.API_PREFIX}/movements`, movementRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -111,7 +94,4 @@ app.use((err, req, res, next) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📝 Environment: ${process.env.NODE_ENV}`);
-  console.log(`📚 API Prefix: ${process.env.API_PREFIX}`);
 });

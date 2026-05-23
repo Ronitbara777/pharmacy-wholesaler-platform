@@ -38,10 +38,8 @@ import { File, Directory, Paths } from 'expo-file-system';
 // Add this line for encoding
 const { EncodingType } = FileSystem;
 
-console.log('📋 HistoryScreen loaded');
 
 export default function HistoryScreen({ navigation }) {
-  console.log('📋 HistoryScreen rendering');
 
   React.useLayoutEffect(() => {
     navigation.setOptions({
@@ -301,7 +299,6 @@ export default function HistoryScreen({ navigation }) {
       }
     }
 
-    console.log('📋 Export params:', params);
 
     let response;
     if (format === 'pdf') {
@@ -310,7 +307,6 @@ export default function HistoryScreen({ navigation }) {
       response = await HistoryService.exportToCSV(params);
     }
 
-    console.log('📋 Export response received, type:', typeof response);
     
     // Handle the response based on platform
     if (Platform.OS === 'web') {
@@ -331,7 +327,6 @@ export default function HistoryScreen({ navigation }) {
       // For mobile, use the legacy API for now (simpler)
       const FileSystem = require('expo-file-system/legacy');
       const fileUri = FileSystem.documentDirectory + `history_export.${format}`;
-      console.log('📋 Saving to:', fileUri);
       
       await FileSystem.writeAsStringAsync(fileUri, response, {
         encoding: FileSystem.EncodingType.UTF8

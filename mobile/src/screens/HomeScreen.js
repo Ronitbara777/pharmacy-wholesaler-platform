@@ -1,10 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, Button } from 'react-native';
 
-console.log('📱 HomeScreen loaded');
 
 export default function HomeScreen({ navigation }) {
-  console.log('📱 HomeScreen rendering');
   
   return (
     <View style={styles.container}>
@@ -13,7 +11,6 @@ export default function HomeScreen({ navigation }) {
       <Button 
         title="Go to Inventory" 
         onPress={() => {
-          console.log('👆 Navigating to Inventory');
           navigation.navigate('Inventory');
         }}
       />
