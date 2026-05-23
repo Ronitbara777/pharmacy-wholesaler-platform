@@ -6,6 +6,7 @@ import {
   RefreshControl,
   Dimensions,
   Alert,
+  TouchableOpacity,
 } from 'react-native';
 import {
   Card,
@@ -32,12 +33,29 @@ import {
 import AuthService from '../services/auth.service';
 import DashboardService from '../services/dashboard.service';
 
-console.log('📊 DashboardScreen loaded');
 
 const screenWidth = Dimensions.get('window').width;
 
 export default function DashboardScreen({ navigation }) {
-  console.log('📊 DashboardScreen rendering');
+
+  React.useLayoutEffect(() => {
+    navigation.setOptions({
+      headerTitle: 'Dashboard',
+      headerRight: () => (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 15 }}>
+          <Avatar.Icon 
+            size={35} 
+            icon="account" 
+            style={{ backgroundColor: '#0F172A', marginRight: 10 }}
+            color="#fff"
+          />
+          <TouchableOpacity onPress={() => setLogoutDialogVisible(true)}>
+            <Ionicons name="log-out-outline" size={28} color="#DC2626" />
+          </TouchableOpacity>
+        </View>
+      ),
+    });
+  });
   
   // State for real data
   const [loading, setLoading] = useState(true);
@@ -63,7 +81,7 @@ export default function DashboardScreen({ navigation }) {
   const chartConfig = {
     backgroundGradientFrom: '#fff',
     backgroundGradientTo: '#fff',
-    color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+    color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`, // Vibrant Blue (#3B82F6)
     strokeWidth: 2,
     barPercentage: 0.5,
     decimalPlaces: 0,
@@ -72,34 +90,45 @@ export default function DashboardScreen({ navigation }) {
     },
   };
 
-  // Mock sales data (until backend endpoint is ready)
-  const salesData = {
+  // Real sales data state
+  const [salesData, setSalesData] = useState({
     labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
     datasets: [{
-      data: [4500, 5200, 4800, 6100, 5900, 8200, 7400],
+      data: [0, 0, 0, 0, 0, 0, 0],
       color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
       strokeWidth: 2,
     }],
-  };
+  });
 
   // Load all dashboard data
   const loadDashboardData = async () => {
     try {
-      console.log('📊 Loading dashboard data...');
       
       // Fetch all data in parallel
-      const [statsResponse, productsResponse, activitiesResponse, warehousesResponse] = await Promise.all([
+      const [statsResponse, productsResponse, activitiesResponse, warehousesResponse, salesResponse] = await Promise.all([
         DashboardService.getStats(),
         DashboardService.getExpiringProducts(),
         DashboardService.getRecentActivities(),
         DashboardService.getWarehouses(),
+        DashboardService.getSalesData(),
       ]);
 
-      console.log('📊 Stats response:', statsResponse);
 
       // Update stats
       if (statsResponse?.success) {
         setStats(statsResponse.data);
+      }
+
+      // Update sales data
+      if (salesResponse?.success && salesResponse.data) {
+        setSalesData({
+          labels: salesResponse.data.labels || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+          datasets: [{
+            data: salesResponse.data.datasets?.[0]?.data || [0, 0, 0, 0, 0, 0, 0],
+            color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+            strokeWidth: 2,
+          }]
+        });
       }
 
       // Update expiring products
@@ -189,13 +218,13 @@ export default function DashboardScreen({ navigation }) {
   // Get activity color
   const getActivityColor = (action) => {
     switch(action) {
-      case 'CREATE': return '#4CAF50';
-      case 'UPDATE': return '#FF9800';
-      case 'DELETE': return '#F44336';
-      case 'LOGIN': return '#2196F3';
-      case 'STOCK_IN': return '#4CAF50';
-      case 'STOCK_OUT': return '#F44336';
-      default: return '#757575';
+      case 'CREATE': return '#16A34A'; // Emerald
+      case 'UPDATE': return '#D97706'; // Amber
+      case 'DELETE': return '#DC2626'; // Crimson
+      case 'LOGIN': return '#3B82F6'; // Blue
+      case 'STOCK_IN': return '#16A34A';
+      case 'STOCK_OUT': return '#DC2626';
+      default: return '#64748B'; // Slate
     }
   };
 
@@ -211,35 +240,6 @@ export default function DashboardScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* Header with User Info and Logout */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>
-            Good {new Date().getHours() < 12 ? 'Morning' : 'Afternoon'}!
-          </Text>
-          <Text style={styles.date}>{new Date().toLocaleDateString('en-US', { 
-            weekday: 'long', 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric' 
-          })}</Text>
-        </View>
-        <View style={styles.headerRight}>
-          <Avatar.Icon 
-            size={50} 
-            icon="account" 
-            style={styles.avatar}
-            color="#fff"
-          />
-          <IconButton
-            icon="logout"
-            size={24}
-            onPress={() => setLogoutDialogVisible(true)}
-            style={styles.logoutButton}
-          />
-        </View>
-      </View>
-          
       {/* Logout Confirmation Dialog */}
       <Portal>
         <Dialog visible={logoutDialogVisible} onDismiss={() => setLogoutDialogVisible(false)}>
@@ -262,46 +262,26 @@ export default function DashboardScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
       >
         {/* Summary Cards */}
-        <View style={styles.summaryGrid}>
-          <Card style={styles.summaryCard} onPress={() => navigation.navigate('Inventory')}>
-            <Card.Content>
-              <View style={styles.summaryIconContainer}>
-                <Ionicons name="cube-outline" size={24} color="#007AFF" />
-              </View>
-              <Text style={styles.summaryValue}>{stats.totalProducts || 0}</Text>
-              <Text style={styles.summaryLabel}>Total Products</Text>
-            </Card.Content>
-          </Card>
+        <View style={styles.statsRow}>
+          <TouchableOpacity style={styles.statBox} onPress={() => navigation.navigate('Inventory')}>
+            <Text style={[styles.statValue, { color: '#3B82F6' }]}>{stats.totalProducts || 0}</Text>
+            <Text style={styles.statLabel}>Products</Text>
+          </TouchableOpacity>
 
-          <Card style={styles.summaryCard} onPress={() => navigation.navigate('Inventory')}>
-            <Card.Content>
-              <View style={[styles.summaryIconContainer, { backgroundColor: '#E8F5E9' }]}>
-                <Ionicons name="cash-outline" size={24} color="#4CAF50" />
-              </View>
-              <Text style={styles.summaryValue}>{formatCurrency(stats.totalValue)}</Text>
-              <Text style={styles.summaryLabel}>Inventory Value</Text>
-            </Card.Content>
-          </Card>
+          <TouchableOpacity style={styles.statBox} onPress={() => navigation.navigate('Inventory')}>
+            <Text style={[styles.statValue, { color: '#16A34A' }]}>{formatCurrency(stats.totalValue)}</Text>
+            <Text style={styles.statLabel}>Value</Text>
+          </TouchableOpacity>
 
-          <Card style={styles.summaryCard} onPress={() => navigation.navigate('Inventory')}>
-            <Card.Content>
-              <View style={[styles.summaryIconContainer, { backgroundColor: '#FFF3E0' }]}>
-                <Ionicons name="warning-outline" size={24} color="#FF9800" />
-              </View>
-              <Text style={styles.summaryValue}>{stats.lowStock || 0}</Text>
-              <Text style={styles.summaryLabel}>Low Stock</Text>
-            </Card.Content>
-          </Card>
+          <TouchableOpacity style={styles.statBox} onPress={() => navigation.navigate('Alerts')}>
+            <Text style={[styles.statValue, { color: '#D97706' }]}>{stats.lowStock || 0}</Text>
+            <Text style={styles.statLabel}>Low Stock</Text>
+          </TouchableOpacity>
 
-          <Card style={styles.summaryCard} onPress={() => navigation.navigate('Alerts')}>
-            <Card.Content>
-              <View style={[styles.summaryIconContainer, { backgroundColor: '#FFEBEE' }]}>
-                <Ionicons name="alert-circle-outline" size={24} color="#F44336" />
-              </View>
-              <Text style={styles.summaryValue}>{stats.expiringSoon || 0}</Text>
-              <Text style={styles.summaryLabel}>Expiring Soon</Text>
-            </Card.Content>
-          </Card>
+          <TouchableOpacity style={styles.statBox} onPress={() => navigation.navigate('Alerts')}>
+            <Text style={[styles.statValue, { color: '#DC2626' }]}>{stats.expiringSoon || 0}</Text>
+            <Text style={styles.statLabel}>Expiring</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Sales Chart (Mock data for now) */}
@@ -350,7 +330,7 @@ export default function DashboardScreen({ navigation }) {
                     </View>
                     <ProgressBar 
                       progress={usedPercent / 100} 
-                      color={usedPercent > 80 ? '#F44336' : '#4CAF50'}
+                      color={usedPercent > 80 ? '#DC2626' : '#16A34A'}
                       style={styles.progressBar}
                     />
                     <View style={styles.warehouseFooter}>
@@ -508,65 +488,36 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    paddingTop: 40,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  greeting: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  date: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
-  },
-  avatar: {
-    backgroundColor: '#007AFF',
-    marginRight: 8,
-  },
-  logoutButton: {
-    margin: 0,
-  },
   scrollView: {
     flex: 1,
   },
-  summaryGrid: {
+  statsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    padding: 8,
-  },
-  summaryCard: {
-    width: '48%',
-    margin: '1%',
-    elevation: 2,
-  },
-  summaryIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#E3F2FD',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
     marginBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
-  summaryValue: {
-    fontSize: 20,
+  statBox: {
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    minWidth: 70,
+  },
+  statValue: {
+    fontSize: 18,
     fontWeight: 'bold',
+    color: '#1E293B',
   },
-  summaryLabel: {
-    fontSize: 12,
-    color: '#666',
+  statLabel: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 4,
   },
   chartCard: {
     margin: 10,

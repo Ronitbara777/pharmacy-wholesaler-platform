@@ -188,14 +188,12 @@ const deleteNotification = async (req, res) => {
 const clearAllNotifications = async (req, res) => {
   try {
     const userId = req.user.id;
-    console.log('🗑️ Clearing all notifications for user:', userId);
     
     // First check if there are any notifications
     const notifications = await prisma.notification.findMany({
       where: { userId }
     });
     
-    console.log(`📊 Found ${notifications.length} notifications`);
 
     if (notifications.length === 0) {
       return res.json({
@@ -210,7 +208,6 @@ const clearAllNotifications = async (req, res) => {
       where: { userId }
     });
 
-    console.log(`✅ Deleted ${result.count} notifications`);
 
     // Log activity
     await prisma.activity.create({

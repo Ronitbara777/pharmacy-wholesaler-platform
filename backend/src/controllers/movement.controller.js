@@ -2,7 +2,7 @@ const prisma = require('../config/prisma');
 const csv = require('csv-parser');
 const { Readable } = require('stream');
 const { createWorker } = require('tesseract.js');
-
+const pdf = require('pdf-parse');
 
 const normalizePrice = (raw) => {
   if (!raw) return null;
@@ -88,16 +88,12 @@ const scanReceipt = async (req, res) => {
       });
     }
 
-    console.log('📄 Receipt received');
-    console.log('File size:', req.file.size);
 
     /**
      * IMPORTANT:
      * createWorker must be awaited
      */
-    const worker = await createWorker('eng', 1, {
-      logger: (m) => console.log(m)
-    });
+    const worker = await createWorker('eng', 1);
 
     /**
      * OCR
@@ -112,7 +108,6 @@ const scanReceipt = async (req, res) => {
      */
     await worker.terminate();
 
-    console.log('✅ OCR SUCCESS');
 
     /**
      * Parse receipt text
@@ -158,23 +153,53 @@ const batchCreateMovements = async (req, res) => {
           throw new Error('Invalid quantity');
         }
 
-        const searchConditions = [];
-        if (item.batchNumber) {
-          searchConditions.push({ batchNumber: item.batchNumber });
-        }
-        if (item.productName) {
-          searchConditions.push({ name: { contains: item.productName, mode: 'insensitive' } });
-        }
-
         let product = null;
         if (item.productId) {
           product = await prisma.product.findUnique({ where: { id: item.productId } });
-        } else if (searchConditions.length) {
-          product = await prisma.product.findFirst({ where: { OR: searchConditions } });
+        } else if (item.productName) {
+          if (type === 'STOCK_IN') {
+            // For receiving, require exact name and batch match (or 'UNKNOWN' if no batch)
+            product = await prisma.product.findFirst({
+              where: {
+                name: { equals: item.productName, mode: 'insensitive' },
+                batchNumber: item.batchNumber || 'UNKNOWN'
+              }
+            });
+          } else {
+            // For sales, require exact name and batch. Reject if batch is missing.
+            if (!item.batchNumber) {
+              throw new Error(`Missing batch number. Please specify the batch number when manually selling ${item.productName}.`);
+            }
+            product = await prisma.product.findFirst({
+              where: {
+                name: { equals: item.productName, mode: 'insensitive' },
+                batchNumber: item.batchNumber
+              }
+            });
+          }
         }
 
         if (!product) {
-          throw new Error('Product not found');
+          if (type === 'STOCK_IN') {
+            const defaultWarehouse = await prisma.warehouse.findFirst();
+            if (!defaultWarehouse) throw new Error("No warehouse available to store new product");
+             
+            product = await prisma.product.create({
+              data: {
+                name: item.productName || 'Unknown Product',
+                batchNumber: item.batchNumber || 'UNKNOWN',
+                expiryDate: item.expiryDate ? new Date(item.expiryDate) : new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
+                price: item.price ? parseFloat(item.price) : 0,
+                mrp: item.mrp ? parseFloat(item.mrp) : null,
+                company: item.party || 'Imported',
+                warehouseId: defaultWarehouse.id,
+                quantity: 0,
+                status: 'ACTIVE'
+              }
+            });
+          } else {
+            throw new Error(`Product not found: ${item.productName}`);
+          }
         }
 
         if (type === 'STOCK_OUT' && product.quantity < quantity) {
@@ -234,6 +259,40 @@ const batchCreateMovements = async (req, res) => {
           });
         }
 
+        // Expiry notification check
+        const movementExpiry = item.expiryDate ? new Date(item.expiryDate) : product.expiryDate;
+        if (type === 'STOCK_IN' && movementExpiry) {
+          const now = new Date();
+          const threeMonthsFromNow = new Date();
+          threeMonthsFromNow.setMonth(now.getMonth() + 3);
+
+          if (movementExpiry < now) {
+            await prisma.notification.create({
+              data: {
+                type: 'EXPIRY',
+                title: 'Product Expired',
+                message: `${product.name} (Batch: ${item.batchNumber || product.batchNumber || 'N/A'}) has expired.`,
+                severity: 'CRITICAL',
+                userId,
+                productId: product.id,
+                data: { expiryDate: movementExpiry }
+              }
+            });
+          } else if (movementExpiry < threeMonthsFromNow) {
+            await prisma.notification.create({
+              data: {
+                type: 'EXPIRY',
+                title: 'Product Expiring Soon',
+                message: `${product.name} (Batch: ${item.batchNumber || product.batchNumber || 'N/A'}) is expiring soon.`,
+                severity: 'HIGH',
+                userId,
+                productId: product.id,
+                data: { expiryDate: movementExpiry }
+              }
+            });
+          }
+        }
+
         results.push(movement);
       } catch (error) {
         errors.push({ index, item, error: error.message });
@@ -280,7 +339,8 @@ const getMovements = async (req, res) => {
       endDate,
       type,
       productId,
-      userId
+      userId,
+      search
     } = req.query;
 
     // Build filter conditions
@@ -295,6 +355,13 @@ const getMovements = async (req, res) => {
     if (type) where.type = type;
     if (productId) where.productId = productId;
     if (userId) where.userId = userId;
+    
+    if (search) {
+      where.OR = [
+        { party: { contains: search, mode: 'insensitive' } },
+        { product: { name: { contains: search, mode: 'insensitive' } } }
+      ];
+    }
 
     // Get total count
     const total = await prisma.stockMovement.count({ where });
@@ -482,6 +549,40 @@ const createMovement = async (req, res) => {
           }
         }
       });
+    }
+
+    // Expiry notification check
+    const movementExpiry = expiryDate ? new Date(expiryDate) : product.expiryDate;
+    if (type === 'STOCK_IN' && movementExpiry) {
+      const now = new Date();
+      const threeMonthsFromNow = new Date();
+      threeMonthsFromNow.setMonth(now.getMonth() + 3);
+
+      if (movementExpiry < now) {
+        await prisma.notification.create({
+          data: {
+            type: 'EXPIRY',
+            title: 'Product Expired',
+            message: `${product.name} (Batch: ${batchNumber || product.batchNumber || 'N/A'}) has expired.`,
+            severity: 'CRITICAL',
+            userId,
+            productId: product.id,
+            data: { expiryDate: movementExpiry }
+          }
+        });
+      } else if (movementExpiry < threeMonthsFromNow) {
+        await prisma.notification.create({
+          data: {
+            type: 'EXPIRY',
+            title: 'Product Expiring Soon',
+            message: `${product.name} (Batch: ${batchNumber || product.batchNumber || 'N/A'}) is expiring soon.`,
+            severity: 'HIGH',
+            userId,
+            productId: product.id,
+            data: { expiryDate: movementExpiry }
+          }
+        });
+      }
     }
 
     res.status(201).json({
@@ -677,12 +778,182 @@ const importCSV = async (req, res) => {
   }
 };
 
+const parsePDFText = (text) => {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  
+  const items = [];
+  let invoiceNo = '';
+  let party = '';
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Invoice No
+    if (line.toLowerCase().startsWith('bill no :')) {
+      invoiceNo = line.substring(9).trim();
+    }
+    
+    // Party
+    if (line.startsWith('M/s ')) {
+      party = line.trim();
+    }
+    
+    // Match serial number like "1.", "2."
+    if (/^\d+\.$/.test(line) && i + 5 < lines.length) {
+      const productName = lines[i + 3];
+      const batchNumber = lines[i + 4];
+      const numbersLine = lines[i + 5];
+      
+      const parts = numbersLine.trim().split(/\s+/);
+      if (parts.length >= 6) {
+        const expiry = parts[0]; // e.g. "3/28"
+        const qty = parseInt(parts[1], 10);
+        const mrp = parseFloat(parts[2]);
+        const rate = parseFloat(parts[3]);
+        
+        // Convert expiry "MM/YY" to "YYYY-MM-DD"
+        let expiryDate = null;
+        if (expiry.includes('/')) {
+           const [m, y] = expiry.split('/');
+           expiryDate = `20${y}-${m.padStart(2, '0')}-01`;
+        }
+        
+        items.push({
+          productName,
+          batchNumber,
+          quantity: qty,
+          mrp,
+          price: rate,
+          expiryDate,
+          notes: ''
+        });
+      }
+      // Skip the matched lines
+      i += 5;
+    }
+  }
+  
+  return { invoiceNo, party, items };
+};
+
+// Import movements from PDF
+const importPDF = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded'
+      });
+    }
+
+    const pdfData = await pdf(req.file.buffer);
+    
+    const parsedData = parsePDFText(pdfData.text);
+    
+    if (parsedData.items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Could not extract any tabular items from the PDF'
+      });
+    }
+
+    // ✅ Duplicate Invoice Check
+    let duplicateWarning = null;
+    if (parsedData.invoiceNo) {
+      const existingCount = await prisma.stockMovement.count({
+        where: { invoiceNo: parsedData.invoiceNo }
+      });
+      if (existingCount > 0) {
+        duplicateWarning = `Bill No. "${parsedData.invoiceNo}" has already been imported (${existingCount} items found).`;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Extracted ${parsedData.items.length} items from PDF`,
+      duplicateWarning,
+      data: parsedData
+    });
+
+  } catch (error) {
+    console.error('❌ Error processing PDF:', error);
+    res.status(500).json({ success: false, message: 'Failed to process PDF file' });
+  }
+};
+
+// Get sales data for the last 7 days
+const getSalesData = async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(today.getDate() - 6);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
+    const movements = await prisma.stockMovement.findMany({
+      where: {
+        type: 'STOCK_OUT',
+        createdAt: {
+          gte: sevenDaysAgo,
+          lte: today
+        }
+      },
+      select: {
+        totalAmount: true,
+        createdAt: true
+      }
+    });
+
+    // Initialize array for last 7 days
+    const labels = [];
+    const data = [];
+    const daysMap = {};
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+      labels.push(dayName);
+      daysMap[dayName] = 0;
+    }
+
+    movements.forEach(m => {
+      const dayName = new Date(m.createdAt).toLocaleDateString('en-US', { weekday: 'short' });
+      if (daysMap[dayName] !== undefined) {
+        daysMap[dayName] += (m.totalAmount || 0);
+      }
+    });
+
+    labels.forEach(label => {
+      data.push(daysMap[label]);
+    });
+
+    res.json({
+      success: true,
+      data: {
+        labels,
+        datasets: [{
+          data,
+          color: "(opacity = 1) => `rgba(0, 122, 255, ${opacity})`",
+          strokeWidth: 2
+        }]
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error fetching sales data:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
 module.exports = {
   getMovements,
   getMovementById,
   createMovement,
   getMovementStats,
   importCSV,
+  importPDF,
   scanReceipt,
-  batchCreateMovements
+  batchCreateMovements,
+  getSalesData
 };

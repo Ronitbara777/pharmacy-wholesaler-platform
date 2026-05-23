@@ -15,7 +15,6 @@ const getActivities = async (req, res) => {
       search
     } = req.query;
 
-    console.log('📋 Activity filters received:', { page, limit, startDate, endDate, action, search });
 
     // Build filter conditions
     const where = {};
@@ -25,18 +24,15 @@ const getActivities = async (req, res) => {
       where.createdAt = {};
       if (startDate) {
         where.createdAt.gte = new Date(startDate);
-        console.log('📋 Start date:', new Date(startDate));
       }
       if (endDate) {
         where.createdAt.lte = new Date(endDate);
-        console.log('📋 End date:', new Date(endDate));
       }
     }
 
     // Action filter
     if (action && action !== 'all' && action !== 'undefined') {
       where.action = action;
-      console.log('📋 Action filter:', action);
     }
 
     // User filter
@@ -52,16 +48,15 @@ const getActivities = async (req, res) => {
     // Search filter
     if (search && search.trim() !== '') {
       where.OR = [
-        { details: { contains: search, mode: 'insensitive' } },
         { entityType: { contains: search, mode: 'insensitive' } },
-        { action: { contains: search, mode: 'insensitive' } }
+        { action: { contains: search, mode: 'insensitive' } },
+        { user: { name: { contains: search, mode: 'insensitive' } } },
+        { product: { name: { contains: search, mode: 'insensitive' } } }
       ];
-      console.log('📋 Search filter:', search);
     }
 
     // Get total count for pagination
     const total = await prisma.activity.count({ where });
-    console.log('📋 Total matching activities:', total);
 
     // Get activities
     const activities = await prisma.activity.findMany({
@@ -87,7 +82,6 @@ const getActivities = async (req, res) => {
       take: parseInt(limit)
     });
 
-    console.log(`📋 Returning ${activities.length} activities`);
 
     res.json({
       success: true,
@@ -252,7 +246,6 @@ const exportToCSV = async (req, res) => {
   try {
     const { startDate, endDate, action } = req.query;
     
-    console.log('📋 Exporting CSV with filters:', { startDate, endDate, action });
 
     // Build filter conditions
     const where = {};
@@ -276,7 +269,6 @@ const exportToCSV = async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    console.log(`📋 Exporting ${activities.length} activities to CSV`);
 
     // Create CSV content
     let csv = 'Timestamp,Action,Entity Type,Entity ID,User,User Email,Product,Batch Number,Details,IP Address,Device\n';
@@ -315,7 +307,6 @@ const exportToPDF = async (req, res) => {
   try {
     const { startDate, endDate, action } = req.query;
     
-    console.log('📋 Exporting PDF with filters:', { startDate, endDate, action });
 
     // Build filter conditions
     const where = {};
@@ -338,7 +329,6 @@ const exportToPDF = async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    console.log(`📋 Exporting ${activities.length} activities to PDF`);
 
     // Create HTML for PDF
     const html = `

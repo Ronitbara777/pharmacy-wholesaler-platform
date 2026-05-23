@@ -17,7 +17,6 @@ const HistoryService = {
       
       const queryString = new URLSearchParams(cleanParams).toString();
       const url = `/activities${queryString ? `?${queryString}` : ''}`;
-      console.log('📋 API Request:', url);
       
       const response = await api.get(url);
       return response;
@@ -63,14 +62,12 @@ exportToCSV: async (params = {}) => {
     
     const queryString = new URLSearchParams(cleanParams).toString();
     const url = `/activities/export/csv${queryString ? `?${queryString}` : ''}`;
-    console.log('📋 Export CSV URL:', url);
     
     const response = await api.get(url, {
       responseType: 'text'
     });
     
     // api interceptor already returns response.data
-    console.log('📋 CSV response length:', response?.length);
     return response;
   } catch (error) {
     console.error('❌ Error exporting to CSV:', error);
@@ -91,13 +88,11 @@ exportToPDF: async (params = {}) => {
     
     const queryString = new URLSearchParams(cleanParams).toString();
     const url = `/activities/export/pdf${queryString ? `?${queryString}` : ''}`;
-    console.log('📋 Export PDF URL:', url);
     
     const response = await api.get(url, {
       responseType: 'text'
     });
     
-    console.log('📋 PDF response length:', response?.length);
     return response;
   } catch (error) {
     console.error('❌ Error exporting to PDF:', error);
@@ -118,7 +113,6 @@ exportToPDF: async (params = {}) => {
       
       const queryString = new URLSearchParams(cleanParams).toString();
       const url = `/activities/export/pdf${queryString ? `?${queryString}` : ''}`;
-      console.log('📋 Export PDF URL:', url);
       
       const response = await api.get(url, {
         responseType: 'text'

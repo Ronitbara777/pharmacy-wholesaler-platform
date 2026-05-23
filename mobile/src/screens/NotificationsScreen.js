@@ -28,10 +28,8 @@ import { Ionicons } from '@expo/vector-icons';
 import AlertService from '../services/alert.service';
 import { useFocusEffect } from '@react-navigation/native';
 
-console.log('🔔 NotificationsScreen loaded');
 
 export default function NotificationsScreen({ navigation }) {
-  console.log('🔔 NotificationsScreen rendering');
   
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -50,13 +48,39 @@ export default function NotificationsScreen({ navigation }) {
     }, [])
   );
 
+  // Calculate stats
+  const stats = {
+    total: notifications.length,
+    unread: notifications.filter(n => !n.read).length,
+    expiry: notifications.filter(n => n.type === 'EXPIRY').length,
+    stock: notifications.filter(n => n.type === 'LOW_STOCK').length,
+    system: notifications.filter(n => n.type === 'SYSTEM').length,
+  };
+
+  React.useLayoutEffect(() => {
+    navigation.setOptions({
+      headerTitle: () => (
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Text style={{ fontSize: 18, fontWeight: 'bold', marginRight: 8 }}>Alerts</Text>
+        </View>
+      ),
+      headerRight: () => (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 10 }}>
+          {stats.unread > 0 && (
+            <Button mode="text" onPress={handleMarkAllAsRead}>
+              Mark all read
+            </Button>
+          )}
+        </View>
+      ),
+    });
+  }, [navigation, stats.unread, stats.total]);
+
   const loadNotifications = async () => {
     try {
-      console.log('🔔 Loading notifications...');
       const response = await AlertService.getNotifications();
       
       if (response.success) {
-        console.log(`🔔 Loaded ${response.data.length} notifications`);
         setNotifications(response.data);
       }
     } catch (error) {
@@ -73,14 +97,8 @@ export default function NotificationsScreen({ navigation }) {
     loadNotifications();
   };
 
-  // Calculate stats
-  const stats = {
-    total: notifications.length,
-    unread: notifications.filter(n => !n.read).length,
-    expiry: notifications.filter(n => n.type === 'EXPIRY').length,
-    stock: notifications.filter(n => n.type === 'LOW_STOCK').length,
-    system: notifications.filter(n => n.type === 'SYSTEM').length,
-  };
+
+
 
   // Filter notifications
   const getFilteredNotifications = () => {
@@ -230,11 +248,11 @@ const handleClearAll = () => {
   // Get color based on severity
   const getSeverityColor = (severity) => {
     switch(severity) {
-      case 'CRITICAL': return '#F44336';
-      case 'HIGH': return '#FF9800';
-      case 'MEDIUM': return '#FFC107';
-      case 'LOW': return '#4CAF50';
-      default: return '#2196F3';
+      case 'CRITICAL': return '#DC2626';
+      case 'HIGH': return '#D97706';
+      case 'MEDIUM': return '#F59E0B';
+      case 'LOW': return '#16A34A';
+      default: return '#3B82F6';
     }
   };
 
@@ -257,7 +275,7 @@ const handleClearAll = () => {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color="#0F172A" />
         <Text style={styles.loadingText}>Loading notifications...</Text>
       </View>
     );
@@ -265,22 +283,7 @@ const handleClearAll = () => {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Title style={styles.headerTitle}>Alerts</Title>
-          <Text style={styles.headerSubtitle}>
-            {stats.unread} unread • {stats.total} total
-          </Text>
-        </View>
-        <View style={styles.headerActions}>
-          {stats.unread > 0 && (
-            <Button mode="text" onPress={handleMarkAllAsRead}>
-              Mark all read
-            </Button>
-          )}
-        </View>
-      </View>
+      {/* Navigation Header Content moved to useLayoutEffect */}
 
       {/* Search Bar */}
       <Searchbar
@@ -341,6 +344,14 @@ const handleClearAll = () => {
 </ScrollView>
 
       {/* Notifications List */}
+      <View style={{ paddingHorizontal: 16, paddingBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={{ fontSize: 14, color: '#666', fontWeight: '500' }}>
+          {stats.unread} unread alerts
+        </Text>
+        <Text style={{ fontSize: 12, color: '#9CA3AF' }}>
+          {stats.total} total
+        </Text>
+      </View>
       <ScrollView
         style={styles.notificationsList}
         refreshControl={
@@ -448,7 +459,7 @@ const handleClearAll = () => {
             mode="outlined" 
             onPress={handleClearAll}
             style={styles.clearButton}
-            color="#F44336"
+            color="#DC2626"
           >
             Clear All Notifications
           </Button>
@@ -600,7 +611,7 @@ const styles = StyleSheet.create({
   },
   unreadCard: {
     borderLeftWidth: 4,
-    borderLeftColor: '#007AFF',
+    borderLeftColor: '#3B82F6',
   },
   notificationHeader: {
     flexDirection: 'row',
@@ -646,7 +657,7 @@ compactFilterText: {
     color: '#666',
   },
   unreadBadge: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#3B82F6',
     marginLeft: 8,
   },
   notificationMessage: {

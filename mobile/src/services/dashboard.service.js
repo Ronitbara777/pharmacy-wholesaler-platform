@@ -55,11 +55,11 @@ const DashboardService = {
     }
   },
 
-  // Get sales data (you'll need to create this endpoint)
-  getSalesData: async (period = 'week') => {
+  // Get sales data
+  getSalesData: async () => {
     try {
-      // This endpoint doesn't exist yet - we'll keep mock data for now
-      return null;
+      const response = await api.get('/movements/sales-data');
+      return response;
     } catch (error) {
       console.error('❌ Error fetching sales data:', error);
       throw error;

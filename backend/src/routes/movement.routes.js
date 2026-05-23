@@ -10,8 +10,10 @@ const {
   createMovement,
   getMovementStats,
   importCSV,
+  importPDF,
   scanReceipt,
-  batchCreateMovements
+  batchCreateMovements,
+  getSalesData
 } = require('../controllers/movement.controller');
 
 const uploadMemory = multer({ storage: multer.memoryStorage() });
@@ -23,8 +25,10 @@ router.use(authenticate);
 // IMPORTANT: Order matters - specific routes before dynamic ones
 router.get('/stats', getMovementStats);  // This must come BEFORE /:id
 router.post('/import', uploadMemory.single('file'), importCSV);
+router.post('/import-pdf', uploadMemory.single('file'), importPDF);
 router.post('/scan', uploadMemory.single('receiptImage'), scanReceipt);
 router.post('/batch', batchCreateMovements);
+router.get('/sales-data', getSalesData);
 router.get('/', getMovements);
 router.post('/', createMovement);
 router.get('/:id', getMovementById);

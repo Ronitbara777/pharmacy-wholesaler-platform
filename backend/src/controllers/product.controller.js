@@ -8,6 +8,7 @@ const getProducts = async (req, res) => {
       page = 1, 
       limit = 10, 
       search, 
+      invoiceNo,
       category, 
       warehouseId,
       status,
@@ -17,6 +18,17 @@ const getProducts = async (req, res) => {
 
     // Build filter conditions
     const where = {};
+    
+    // Invoice number search — find products linked to this invoice via StockMovement
+    if (invoiceNo) {
+      const movements = await prisma.stockMovement.findMany({
+        where: { invoiceNo: { contains: invoiceNo, mode: 'insensitive' } },
+        select: { productId: true },
+        distinct: ['productId']
+      });
+      const productIds = movements.map(m => m.productId);
+      where.id = { in: productIds };
+    }
     
     if (search) {
       where.OR = [
@@ -263,8 +275,6 @@ const createProduct = async (req, res) => {
 const updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    console.log('✏️ Backend - UPDATE request for ID:', id);
-    console.log('✏️ Backend - Update data:', req.body);
 
     // Check if product exists
     const existingProduct = await prisma.product.findUnique({
@@ -272,14 +282,12 @@ const updateProduct = async (req, res) => {
     });
 
     if (!existingProduct) {
-      console.log('✏️ Backend - Product not found');
       return res.status(404).json({
         success: false,
         message: 'Product not found'
       });
     }
 
-    console.log('✏️ Backend - Current product:', existingProduct);
 
     // Prepare update data (only include fields that are provided)
     const updateData = {};
@@ -312,7 +320,6 @@ const updateProduct = async (req, res) => {
       }
     }
 
-    console.log('✏️ Backend - Update data prepared:', updateData);
 
     // Update product
     const updatedProduct = await prisma.product.update({
@@ -320,7 +327,6 @@ const updateProduct = async (req, res) => {
       data: updateData
     });
 
-    console.log('✏️ Backend - Product updated:', updatedProduct);
 
     // Log activity
     await prisma.activity.create({
@@ -363,7 +369,6 @@ const updateProduct = async (req, res) => {
 const deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    console.log('🗑️ Backend - HARD DELETE request for ID:', id);
 
     // Check if product exists
     const product = await prisma.product.findUnique({
@@ -377,31 +382,25 @@ const deleteProduct = async (req, res) => {
       });
     }
 
-    console.log('🗑️ Backend - Product found:', product.name);
 
     // Delete related records first (due to foreign key constraints)
-    console.log('🗑️ Backend - Deleting related stock movements...');
     await prisma.stockMovement.deleteMany({
       where: { productId: id }
     });
 
-    console.log('🗑️ Backend - Deleting related activities...');
     await prisma.activity.deleteMany({
       where: { productId: id }
     });
 
-    console.log('🗑️ Backend - Deleting related notifications...');
     await prisma.notification.deleteMany({
       where: { productId: id }
     });
 
     // Finally delete the product
-    console.log('🗑️ Backend - Deleting product...');
     await prisma.product.delete({
       where: { id }
     });
 
-    console.log('🗑️ Backend - Product and all related records permanently deleted');
 
     // Log activity
     await prisma.activity.create({

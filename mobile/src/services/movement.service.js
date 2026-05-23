@@ -61,6 +61,21 @@ const MovementService = {
     }
   },
 
+  // Import movements from PDF
+  importPDF: async (formData) => {
+    try {
+      const response = await api.post('/movements/import-pdf', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      return response;
+    } catch (error) {
+      console.error('❌ Error importing PDF:', error);
+      throw error;
+    }
+  },
+
   // Scan receipt image for OCR parsing
   scanReceipt: async (formData) => {
     try {

@@ -27,25 +27,14 @@ app.use(helmet());
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 150 // limit each IP to 150 requests per minute
 });
 app.use('/api', limiter);
 
 // CORS
-/*app.use(cors({
-  origin: process.env.CORS_ORIGIN?.split(',') || '*',
-  credentials: true
-}));*/
-
 app.use(cors({
-  origin: [
-    'http://localhost:8081',
-    'http://localhost:19006',
-    'https://ti3qeba-anonymous-8081.exp.direct', // Your Expo domain
-    'https://*.exp.direct', // Allow all Expo domains
-    'https://*.expo.dev' // Allow Expo dev domains
-  ],
+  origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*',
   credentials: true
 }));
 
@@ -80,8 +69,6 @@ app.use(`${process.env.API_PREFIX}/movements`, movementRoutes);
 app.use(`${process.env.API_PREFIX}/notifications`, notificationRoutes);
 app.use(`${process.env.API_PREFIX}/activities`, activityRoutes);
 app.use(`${process.env.API_PREFIX}/import`, importRoutes);
-app.use(`${process.env.API_PREFIX}/activities`, activityRoutes);
-app.use(`${process.env.API_PREFIX}/movements`, movementRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -107,7 +94,4 @@ app.use((err, req, res, next) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📝 Environment: ${process.env.NODE_ENV}`);
-  console.log(`📚 API Prefix: ${process.env.API_PREFIX}`);
 });

@@ -30,10 +30,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import InventoryService from '../services/inventory.service';
 
-console.log('📦 InventoryScreen loaded');
 
 export default function InventoryScreen({ navigation }) {
-  console.log('📦 InventoryScreen rendering');
   
   // State for data
   const [products, setProducts] = useState([]);
@@ -45,6 +43,7 @@ export default function InventoryScreen({ navigation }) {
   // UI State
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
   const [searchQuery, setSearchQuery] = useState('');
+  const [invoiceSearch, setInvoiceSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedWarehouse, setSelectedWarehouse] = useState('All');
   const [sortBy, setSortBy] = useState('name');
@@ -89,7 +88,59 @@ export default function InventoryScreen({ navigation }) {
     if (!loading) {
       loadProducts();
     }
-  }, [page, selectedCategory, selectedWarehouse, searchQuery, sortBy]);
+  }, [page, selectedCategory, selectedWarehouse, searchQuery, invoiceSearch, sortBy]);
+
+  // Set navigation options to show header content
+  React.useLayoutEffect(() => {
+    navigation.setOptions({
+      headerTitle: () => (
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Text style={{ fontSize: 18, fontWeight: 'bold', marginRight: 8 }}>Inventory</Text>
+        </View>
+      ),
+      headerRight: () => (
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <IconButton
+            icon="refresh"
+            size={22}
+            onPress={() => {
+              setSelectedCategory('All');
+              setSelectedWarehouse('All');
+              setSearchQuery('');
+              setPage(1);
+              loadProducts();
+            }}
+          />
+          <IconButton
+            icon={viewMode === 'grid' ? 'view-list' : 'view-grid'}
+            size={22}
+            onPress={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
+          />
+          <Menu
+            visible={sortMenuVisible}
+            onDismiss={() => setSortMenuVisible(false)}
+            anchor={
+              <IconButton
+                icon="sort"
+                size={22}
+                onPress={() => setSortMenuVisible(true)}
+              />
+            }
+          >
+            <Menu.Item onPress={() => handleSort('name')} title="Sort by Name" leadingIcon="sort-alphabetical-ascending" />
+            <Menu.Item onPress={() => handleSort('expiryDate')} title="Sort by Expiry" leadingIcon="calendar" />
+            <Menu.Item onPress={() => handleSort('quantity')} title="Sort by Quantity" leadingIcon="sort-numeric-ascending" />
+            <Menu.Item onPress={() => handleSort('price')} title="Sort by Price" leadingIcon="currency-inr" />
+          </Menu>
+          <IconButton
+            icon="filter"
+            size={22}
+            onPress={() => setFilterMenuVisible(true)}
+          />
+        </View>
+      ),
+    });
+  }, [navigation, totalProducts, page, totalPages, viewMode, sortMenuVisible]);
 
   const loadInitialData = async () => {
     try {
@@ -122,15 +173,6 @@ export default function InventoryScreen({ navigation }) {
 
   const loadProducts = async () => {
   try {
-    console.log('📦 ===== LOADING PRODUCTS =====');
-    console.log('📦 Current filters:', {
-      page,
-      limit,
-      search: searchQuery,
-      category: selectedCategory,
-      warehouse: selectedWarehouse,
-      sortBy
-    });
 
     const params = {
       page,
@@ -144,6 +186,10 @@ export default function InventoryScreen({ navigation }) {
       params.search = searchQuery.trim();
     }
 
+    if (invoiceSearch && invoiceSearch.trim() !== '') {
+      params.invoiceNo = invoiceSearch.trim();
+    }
+
     if (selectedCategory && selectedCategory !== 'All') {
       params.category = selectedCategory;
     }
@@ -152,29 +198,38 @@ export default function InventoryScreen({ navigation }) {
       params.warehouseId = selectedWarehouse;
     }
 
-    console.log('📦 Request params:', params);
 
     const response = await InventoryService.getProducts(params);
     
-    console.log('📦 Full API Response:', JSON.stringify(response, null, 2));
 
     if (response && response.success) {
-      console.log('📦 Products data:', response.data);
-      console.log('📦 Number of products:', response.data?.length || 0);
-      console.log('📦 Pagination:', response.pagination);
       
       if (response.data && response.data.length > 0) {
-        console.log('📦 First product:', response.data[0]);
-        setProducts(response.data);
+        // Group by product name and company
+        const groupedMap = new Map();
+        response.data.forEach(p => {
+          const key = `${p.name}_${p.company}`;
+          if (!groupedMap.has(key)) {
+            groupedMap.set(key, {
+              id: key, // unique key for rendering
+              name: p.name,
+              company: p.company,
+              totalQuantity: 0,
+              batches: []
+            });
+          }
+          const group = groupedMap.get(key);
+          group.totalQuantity += p.quantity;
+          group.batches.push(p);
+        });
+        setProducts(Array.from(groupedMap.values()));
       } else {
-        console.log('📦 No products returned from API');
         setProducts([]);
       }
       
       setTotalPages(response.pagination?.pages || 1);
       setTotalProducts(response.pagination?.total || 0);
     } else {
-      console.log('📦 API response not successful:', response);
       setProducts([]);
     }
   } catch (error) {
@@ -182,7 +237,6 @@ export default function InventoryScreen({ navigation }) {
     console.error('❌ Error details:', error.response?.data || error.message);
     Alert.alert('Error', 'Failed to load products');
   } finally {
-    console.log('📦 ===== LOADING COMPLETE =====');
   }
 };
 
@@ -195,7 +249,14 @@ export default function InventoryScreen({ navigation }) {
 
   const handleSearch = (query) => {
     setSearchQuery(query);
-    setPage(1); // Reset to first page on new search
+    setInvoiceSearch(''); // Clear invoice search when doing name search
+    setPage(1);
+  };
+
+  const handleInvoiceSearch = (query) => {
+    setInvoiceSearch(query);
+    setSearchQuery(''); // Clear name search when doing invoice search
+    setPage(1);
   };
 
   const handleCategoryFilter = (category) => {
@@ -239,9 +300,6 @@ export default function InventoryScreen({ navigation }) {
   };
 
   const handleEditProduct = (product) => {
-  console.log('✏️ EDIT - Product clicked:', product);
-  console.log('✏️ EDIT - Product ID:', product.id);
-  console.log('✏️ EDIT - Product data:', JSON.stringify(product, null, 2));
   
   setIsEditing(true);
   setSelectedProduct(product);
@@ -263,8 +321,6 @@ export default function InventoryScreen({ navigation }) {
 };
 
   const handleDeleteProduct = (product) => {
-  console.log('🗑️ DELETE - Attempting to delete:', product);
-  console.log('🗑️ DELETE - Product ID:', product.id);
   
   Alert.alert(
     'Delete Product',
@@ -276,23 +332,18 @@ export default function InventoryScreen({ navigation }) {
         style: 'destructive',
         onPress: async () => {
           try {
-            console.log('🗑️ DELETE - Sending delete request for ID:', product.id);
             
             const response = await InventoryService.deleteProduct(product.id);
             
-            console.log('🗑️ DELETE - Response:', response);
             
             if (response && response.success) {
-              console.log('🗑️ DELETE - Success, reloading products...');
               Alert.alert('Success', 'Product deleted successfully');
               
               // Reload products
               await loadProducts();
               
               // Log the new state
-              console.log('🗑️ DELETE - Products after reload:', products.length);
             } else {
-              console.log('🗑️ DELETE - Failed:', response);
               Alert.alert('Error', response?.message || 'Failed to delete product');
             }
           } catch (error) {
@@ -308,9 +359,6 @@ export default function InventoryScreen({ navigation }) {
 };
 
   const handleSaveProduct = async () => {
-  console.log('💾 SAVE - Starting save operation');
-  console.log('💾 SAVE - Is editing:', isEditing);
-  console.log('💾 SAVE - Form data:', formData);
   
   // Validate required fields
   const requiredFields = [
@@ -361,18 +409,14 @@ export default function InventoryScreen({ navigation }) {
       reorderLevel: parseInt(formData.reorderLevel) || 100,
     };
 
-    console.log('💾 SAVE - Product data to send:', productData);
 
     let response;
     if (isEditing) {
-      console.log('💾 SAVE - Updating product ID:', selectedProduct.id);
       response = await InventoryService.updateProduct(selectedProduct.id, productData);
     } else {
-      console.log('💾 SAVE - Creating new product');
       response = await InventoryService.createProduct(productData);
     }
 
-    console.log('💾 SAVE - Response:', response);
 
     if (response && response.success) {
       Alert.alert('Success', `Product ${isEditing ? 'updated' : 'created'} successfully`);
@@ -395,12 +439,9 @@ export default function InventoryScreen({ navigation }) {
       });
       
       // Reload products
-      console.log('💾 SAVE - Reloading products...');
       await loadProducts();
-      console.log('💾 SAVE - Products reloaded');
       
     } else {
-      console.log('💾 SAVE - Failed:', response);
       Alert.alert('Error', response?.message || 'Failed to save product');
     }
   } catch (error) {
@@ -424,34 +465,41 @@ export default function InventoryScreen({ navigation }) {
     const expiry = new Date(expiryDate);
     const diffDays = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
     
-    if (diffDays < 0) return { label: 'Expired', color: '#F44336', icon: 'skull' };
-    if (diffDays < 30) return { label: 'Critical', color: '#FF9800', icon: 'alert' };
-    if (diffDays < 60) return { label: 'Warning', color: '#FFC107', icon: 'warning' };
-    return { label: 'Good', color: '#4CAF50', icon: 'checkmark-circle' };
+    if (diffDays < 0) return { label: 'Expired', color: '#DC2626', icon: 'skull' };
+    if (diffDays < 30) return { label: 'Critical', color: '#D97706', icon: 'alert' };
+    if (diffDays < 60) return { label: 'Warning', color: '#F59E0B', icon: 'warning' };
+    return { label: 'Good', color: '#16A34A', icon: 'checkmark-circle' };
   };
 
-  const renderProductCard = (product) => {
-    const expiryStatus = getExpiryStatus(product.expiryDate);
-    const warehouse = warehouses.find(w => w.id === product.warehouseId);
+  const renderProductCard = (group) => {
+    if (!group || !group.batches || group.batches.length === 0) return null;
     
+    // Determine overall expiry status (worst case among batches)
+    const allStatuses = group.batches.map(b => getExpiryStatus(b.expiryDate));
+    const isExpired = allStatuses.some(s => s.label === 'Expired');
+    const isCritical = allStatuses.some(s => s.label === 'Critical');
+    const isWarning = allStatuses.some(s => s.label === 'Warning');
+    const overallExpiryStatus = isExpired ? getExpiryStatus(new Date(0)) : 
+                                isCritical ? getExpiryStatus(new Date().setDate(new Date().getDate() + 10)) : 
+                                isWarning ? getExpiryStatus(new Date().setDate(new Date().getDate() + 40)) : 
+                                getExpiryStatus(new Date().setDate(new Date().getDate() + 100));
+
     if (viewMode === 'grid') {
+      const displayBatches = group.batches.slice(0, 2);
+      const hiddenCount = group.batches.length - 2;
+
       return (
-        <TouchableOpacity 
-          key={product.id} 
-          style={styles.gridCard}
-          onPress={() => handleViewDetails(product)}
-          onLongPress={() => handleEditProduct(product)}
-        >
+        <View key={group.id} style={styles.gridCard}>
           <Card style={styles.gridCardInner}>
             <Card.Content>
               <View style={styles.gridHeader}>
                 <Badge 
-                  style={[styles.expiryBadge, { backgroundColor: expiryStatus.color }]}
+                  style={[styles.expiryBadge, { backgroundColor: overallExpiryStatus.color }]}
                   size={24}
                 >
-                  {expiryStatus.label[0]}
+                  {overallExpiryStatus.label[0]}
                 </Badge>
-                {product.quantity === 0 && (
+                {group.totalQuantity === 0 && (
                   <Badge style={styles.outOfStockBadge} size={16}>!</Badge>
                 )}
               </View>
@@ -464,128 +512,100 @@ export default function InventoryScreen({ navigation }) {
               />
               
               <Text style={styles.gridProductName} numberOfLines={2}>
-                {product.name}
+                {group.name}
               </Text>
               
-              <Text style={styles.gridCompany}>{product.company}</Text>
+              <Text style={styles.gridCompany} numberOfLines={1}>{group.company}</Text>
               
               <Divider style={styles.gridDivider} />
               
               <View style={styles.gridDetails}>
                 <View style={styles.gridDetailRow}>
-                  <Ionicons name="cube-outline" size={14} color="#666" />
-                  <Text style={styles.gridDetailText}>Batch: {product.batchNumber}</Text>
+                  <Text style={[styles.gridDetailText, { fontWeight: 'bold' }]}>Batches:</Text>
                 </View>
-                <View style={styles.gridDetailRow}>
-                  <Ionicons name="calendar-outline" size={14} color="#666" />
-                  <Text style={styles.gridDetailText}>
-                    {new Date(product.expiryDate).toLocaleDateString()}
-                  </Text>
-                </View>
-                <View style={styles.gridDetailRow}>
-                  <Ionicons name="location-outline" size={14} color="#666" />
-                  <Text style={styles.gridDetailText}>
-                    {warehouse?.name || 'Unknown'}
-                  </Text>
-                </View>
+                {displayBatches.map(batch => (
+                  <TouchableOpacity key={batch.id} onPress={() => handleViewDetails(batch)} onLongPress={() => handleEditProduct(batch)}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginVertical: 2 }}>
+                      <Text style={[styles.gridDetailText, { color: getExpiryStatus(batch.expiryDate).color }]}>{batch.batchNumber}</Text>
+                      <Text style={styles.gridDetailText}>Qty: {batch.quantity}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+                {hiddenCount > 0 && (
+                  <Text style={[styles.gridDetailText, { fontStyle: 'italic', textAlign: 'center', marginTop: 4 }]}>+{hiddenCount} more...</Text>
+                )}
               </View>
               
-              <View style={styles.gridFooter}>
-                <View>
-                  <Text style={styles.gridPriceLabel}>Price</Text>
-                  <Text style={styles.gridPrice}>₹{product.price}</Text>
-                </View>
+              <View style={[styles.gridFooter, { marginTop: 8 }]}>
                 <View style={styles.gridQuantityContainer}>
-                  <Text style={styles.gridQuantityLabel}>Qty</Text>
+                  <Text style={styles.gridQuantityLabel}>Total Qty</Text>
                   <Text style={[
                     styles.gridQuantity,
-                    product.quantity === 0 ? styles.textOutOfStock :
-                    product.quantity < (product.reorderLevel || 100) ? styles.textLowStock : null
+                    group.totalQuantity === 0 ? styles.textOutOfStock : null
                   ]}>
-                    {product.quantity}
+                    {group.totalQuantity}
                   </Text>
                 </View>
               </View>
             </Card.Content>
           </Card>
-        </TouchableOpacity>
+        </View>
       );
     } else {
       return (
-        <Card key={product.id} style={styles.listCard}>
+        <Card key={group.id} style={styles.listCard}>
           <Card.Content>
             <View style={styles.listHeader}>
               <View style={styles.listTitleSection}>
-                <Text style={styles.listProductName}>{product.name}</Text>
-                <Text style={styles.listCompany}>{product.company}</Text>
+                <Text style={styles.listProductName}>{group.name}</Text>
+                <Text style={styles.listCompany}>{group.company}</Text>
               </View>
-              <Chip 
-                mode="outlined"
-                style={[styles.statusChip, { borderColor: expiryStatus.color }]}
-                textStyle={{ color: expiryStatus.color }}
-                icon={expiryStatus.icon}
-              >
-                {expiryStatus.label}
-              </Chip>
-            </View>
-
-            <View style={styles.listDetails}>
-              <View style={styles.listDetailRow}>
-                <Ionicons name="cube-outline" size={16} color="#666" />
-                <Text style={styles.listDetailText}>Batch: {product.batchNumber}</Text>
-              </View>
-              <View style={styles.listDetailRow}>
-                <Ionicons name="calendar-outline" size={16} color="#666" />
-                <Text style={styles.listDetailText}>
-                  Expires: {new Date(product.expiryDate).toLocaleDateString()}
-                </Text>
-              </View>
-              <View style={styles.listDetailRow}>
-                <Ionicons name="location-outline" size={16} color="#666" />
-                <Text style={styles.listDetailText}>
-                  {warehouse?.name || 'Unknown'} • {product.shelf || 'No shelf'}
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={styles.listQuantityLabel}>Total Qty</Text>
+                <Text style={[styles.listQuantity, group.totalQuantity === 0 ? styles.textOutOfStock : null]}>
+                  {group.totalQuantity}
                 </Text>
               </View>
             </View>
 
-            <Divider style={styles.listDivider} />
+            <Divider style={[styles.listDivider, { marginVertical: 12 }]} />
 
-            <View style={styles.listFooter}>
-              <View>
-                <Text style={styles.listPriceLabel}>Price</Text>
-                <Text style={styles.listPrice}>₹{product.price}</Text>
-                {product.mrp && (
-                  <Text style={styles.listMrp}>MRP: ₹{product.mrp}</Text>
-                )}
+            <View style={{ paddingHorizontal: 4 }}>
+              <View style={{ flexDirection: 'row', paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' }}>
+                <Text style={{ flex: 2, fontSize: 12, fontWeight: 'bold', color: '#666' }}>Batch No.</Text>
+                <Text style={{ flex: 2, fontSize: 12, fontWeight: 'bold', color: '#666' }}>Expiry</Text>
+                <Text style={{ flex: 1, fontSize: 12, fontWeight: 'bold', color: '#666', textAlign: 'right' }}>Qty</Text>
+                <Text style={{ flex: 1, fontSize: 12, fontWeight: 'bold', color: '#666', textAlign: 'center' }}>Action</Text>
               </View>
-              <View style={styles.listQuantitySection}>
-                <Text style={styles.listQuantityLabel}>Quantity</Text>
-                <Text style={[
-                  styles.listQuantity,
-                  product.quantity === 0 ? styles.textOutOfStock :
-                  product.quantity < (product.reorderLevel || 100) ? styles.textLowStock : null
-                ]}>
-                  {product.quantity}
-                </Text>
-              </View>
-              <View style={styles.listActions}>
-                <IconButton
-                  icon="eye"
-                  size={20}
-                  onPress={() => handleViewDetails(product)}
-                />
-                <IconButton
-                  icon="pencil"
-                  size={20}
-                  onPress={() => handleEditProduct(product)}
-                />
-                <IconButton
-                  icon="delete"
-                  size={20}
-                  onPress={() => handleDeleteProduct(product)}
-                />
-              </View>
+              
+              {group.batches.map(batch => {
+                const batchExpiry = getExpiryStatus(batch.expiryDate);
+                return (
+                  <View key={batch.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f8f9fa' }}>
+                    <Text style={{ flex: 2, fontSize: 13, color: '#333' }}>{batch.batchNumber}</Text>
+                    <View style={{ flex: 2, flexDirection: 'row', alignItems: 'center' }}>
+                      <Ionicons name={batchExpiry.icon} size={12} color={batchExpiry.color} style={{ marginRight: 4 }} />
+                      <Text style={{ fontSize: 12, color: batchExpiry.color }}>
+                        {new Date(batch.expiryDate).toLocaleDateString(undefined, {month: 'short', year: '2-digit'})}
+                      </Text>
+                    </View>
+                    <Text style={{ flex: 1, fontSize: 13, fontWeight: '600', textAlign: 'right' }}>{batch.quantity}</Text>
+                    <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'center' }}>
+                      <TouchableOpacity onPress={() => handleEditProduct(batch)} style={{ padding: 4 }}>
+                        <Ionicons name="pencil" size={16} color="#3B82F6" />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => handleViewDetails(batch)} style={{ padding: 4 }}>
+                        <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => handleDeleteProduct(batch)} style={{ padding: 4 }}>
+                        <Ionicons name="trash" size={16} color="#DC2626" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })}
             </View>
+
           </Card.Content>
         </Card>
       );
@@ -595,7 +615,7 @@ export default function InventoryScreen({ navigation }) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color="#0F172A" />
         <Text style={styles.loadingText}>Loading inventory...</Text>
       </View>
     );
@@ -603,75 +623,7 @@ export default function InventoryScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Title style={styles.headerTitle}>Inventory</Title>
-          <Text style={styles.headerSubtitle}>
-            {totalProducts} products • Page {page}/{totalPages}
-          </Text>
-                  <IconButton
-          icon="refresh"
-          size={24}
-          onPress={() => {
-            setSelectedCategory('All');
-            setSelectedWarehouse('All');
-            setSearchQuery('');
-            setPage(1);
-            loadProducts();
-          }}
-        />
-        </View>
-        <View style={styles.headerActions}>
-          <IconButton
-            icon={viewMode === 'grid' ? 'view-list' : 'view-grid'}
-            size={24}
-            onPress={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-          />
-          
-          <Menu
-            visible={sortMenuVisible}
-            onDismiss={() => setSortMenuVisible(false)}
-            anchor={
-              <IconButton
-                icon="sort"
-                size={24}
-                onPress={() => setSortMenuVisible(true)}
-              />
-            }
-          >
-            // Add this in the header actions next to other icons
-
-            <Menu.Item 
-              onPress={() => handleSort('name')} 
-              title="Sort by Name" 
-              leadingIcon="sort-alphabetical-ascending"
-            />
-            <Menu.Item 
-              onPress={() => handleSort('expiryDate')} 
-              title="Sort by Expiry" 
-              leadingIcon="calendar"
-            />
-            <Menu.Item 
-              onPress={() => handleSort('quantity')} 
-              title="Sort by Quantity" 
-              leadingIcon="sort-numeric-ascending"
-            />
-            <Menu.Item 
-              onPress={() => handleSort('price')} 
-              title="Sort by Price" 
-              leadingIcon="currency-inr"
-            />
-          </Menu>
-          <IconButton
-            icon="filter"
-            size={24}
-            onPress={() => setFilterMenuVisible(true)}
-          />
-          
-        </View>
-      </View>
-
+      {/* Navigation Header Content moved to useLayoutEffect */}
       {/* Search Bar */}
       <Searchbar
         placeholder="Search products, batch, company..."
@@ -679,6 +631,24 @@ export default function InventoryScreen({ navigation }) {
         value={searchQuery}
         style={styles.searchbar}
       />
+      <Searchbar
+        placeholder="Search by Bill / Invoice No..."
+        onChangeText={handleInvoiceSearch}
+        value={invoiceSearch}
+        style={[styles.searchbar, { marginTop: 0 }]}
+        icon="file-document-outline"
+      />
+      {invoiceSearch.trim() !== '' && (
+        <View style={{ paddingHorizontal: 16, marginBottom: 4 }}>
+          <Chip
+            icon="close"
+            onClose={() => handleInvoiceSearch('')}
+            style={{ alignSelf: 'flex-start' }}
+          >
+            Invoice: {invoiceSearch}
+          </Chip>
+        </View>
+      )}
 
       {/* Filter Chips */}
      
@@ -687,8 +657,17 @@ export default function InventoryScreen({ navigation }) {
       
 
       {/* Product List/Grid */}
+      <View style={{ paddingHorizontal: 16, paddingBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={{ fontSize: 14, color: '#666', fontWeight: '500' }}>
+          Showing {totalProducts} products
+        </Text>
+        <Text style={{ fontSize: 12, color: '#9CA3AF' }}>
+          Page {page} of {totalPages}
+        </Text>
+      </View>
       <ScrollView
         style={styles.productList}
+        contentContainerStyle={{ paddingBottom: 80 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
@@ -1031,12 +1010,12 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   outOfStockBadge: {
-    backgroundColor: '#F44336',
+    backgroundColor: '#DC2626',
   },
   productIcon: {
     alignSelf: 'center',
     marginBottom: 8,
-    backgroundColor: '#007AFF',
+    backgroundColor: '#3B82F6',
   },
   gridProductName: {
     fontSize: 14,
@@ -1077,7 +1056,7 @@ const styles = StyleSheet.create({
   gridPrice: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#007AFF',
+    color: '#16A34A',
   },
   gridQuantityContainer: {
     alignItems: 'center',
@@ -1144,7 +1123,7 @@ const styles = StyleSheet.create({
   listPrice: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#007AFF',
+    color: '#16A34A',
   },
   listMrp: {
     fontSize: 10,
@@ -1165,10 +1144,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   textLowStock: {
-    color: '#FF9800',
+    color: '#D97706',
   },
   textOutOfStock: {
-    color: '#F44336',
+    color: '#DC2626',
   },
   emptyContainer: {
     alignItems: 'center',

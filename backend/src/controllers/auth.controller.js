@@ -75,11 +75,9 @@ const register = async (req, res) => {
 // Login user
 const login = async (req, res) => {
   try {
-    console.log('📝 Login attempt for email:', req.body.email);
     
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      console.log('❌ Validation errors:', errors.array());
       return res.status(400).json({ 
         success: false, 
         errors: errors.array() 
@@ -87,14 +85,12 @@ const login = async (req, res) => {
     }
 
     const { email, password } = req.body;
-    console.log('🔍 Looking up user...');
 
     // Find user
     const user = await prisma.user.findUnique({
       where: { email }
     });
     
-    console.log('👤 User found:', user ? 'Yes' : 'No');
 
     if (!user) {
       return res.status(401).json({ 
@@ -103,10 +99,8 @@ const login = async (req, res) => {
       });
     }
 
-    console.log('🔐 Checking password...');
     // Check password
     const isValidPassword = await bcrypt.compare(password, user.password);
-    console.log('✅ Password valid:', isValidPassword);
     
     if (!isValidPassword) {
       return res.status(401).json({ 
@@ -115,7 +109,6 @@ const login = async (req, res) => {
       });
     }
 
-    console.log('🎫 Generating token...');
     // Generate token
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
@@ -126,7 +119,6 @@ const login = async (req, res) => {
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
 
-    console.log('✅ Login successful for:', email);
     
     res.json({
       success: true,

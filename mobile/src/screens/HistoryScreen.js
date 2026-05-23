@@ -38,10 +38,53 @@ import { File, Directory, Paths } from 'expo-file-system';
 // Add this line for encoding
 const { EncodingType } = FileSystem;
 
-console.log('📋 HistoryScreen loaded');
 
 export default function HistoryScreen({ navigation }) {
-  console.log('📋 HistoryScreen rendering');
+
+  React.useLayoutEffect(() => {
+    navigation.setOptions({
+      headerTitle: 'History',
+      headerRight: () => (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 10 }}>
+          <Menu
+            visible={exportMenuVisible}
+            onDismiss={() => setExportMenuVisible(false)}
+            anchor={
+              <IconButton
+                icon="download"
+                size={24}
+                onPress={() => setExportMenuVisible(true)}
+                disabled={exporting}
+              />
+            }
+          >
+            <Menu.Item 
+              onPress={() => handleExport('pdf')} 
+              title="Export as PDF" 
+              leadingIcon="file-pdf"
+              disabled={exporting}
+            />
+            <Menu.Item 
+              onPress={() => handleExport('csv')} 
+              title="Export as CSV" 
+              leadingIcon="file-delimited"
+              disabled={exporting}
+            />
+          </Menu>
+          <IconButton
+            icon={viewMode === 'list' ? 'view-list' : 'view-grid'}
+            size={24}
+            onPress={() => setViewMode(viewMode === 'list' ? 'table' : 'list')}
+          />
+          <IconButton
+            icon="filter"
+            size={24}
+            onPress={() => setFilterVisible(true)}
+          />
+        </View>
+      ),
+    });
+  });
   
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -146,9 +189,11 @@ export default function HistoryScreen({ navigation }) {
     try {
       const params = {
         page,
-        limit,
-        search: searchQuery || undefined
+        limit
       };
+      if (searchQuery && searchQuery.trim() !== '') {
+        params.search = searchQuery.trim();
+      }
 
       // Add date filters
       if (selectedDateRange === 'custom' && startDate && endDate) {
@@ -254,7 +299,6 @@ export default function HistoryScreen({ navigation }) {
       }
     }
 
-    console.log('📋 Export params:', params);
 
     let response;
     if (format === 'pdf') {
@@ -263,7 +307,6 @@ export default function HistoryScreen({ navigation }) {
       response = await HistoryService.exportToCSV(params);
     }
 
-    console.log('📋 Export response received, type:', typeof response);
     
     // Handle the response based on platform
     if (Platform.OS === 'web') {
@@ -284,7 +327,6 @@ export default function HistoryScreen({ navigation }) {
       // For mobile, use the legacy API for now (simpler)
       const FileSystem = require('expo-file-system/legacy');
       const fileUri = FileSystem.documentDirectory + `history_export.${format}`;
-      console.log('📋 Saving to:', fileUri);
       
       await FileSystem.writeAsStringAsync(fileUri, response, {
         encoding: FileSystem.EncodingType.UTF8
@@ -337,14 +379,14 @@ export default function HistoryScreen({ navigation }) {
 
   const getActionColor = (action) => {
     switch(action) {
-      case 'LOGIN': return '#2196F3';
-      case 'CREATE': return '#4CAF50';
-      case 'UPDATE': return '#FF9800';
-      case 'DELETE': return '#F44336';
-      case 'VIEW': return '#9C27B0';
-      case 'EXPORT': return '#3F51B5';
-      case 'PRINT': return '#795548';
-      default: return '#757575';
+      case 'LOGIN': return '#3B82F6';
+      case 'CREATE': return '#16A34A';
+      case 'UPDATE': return '#D97706';
+      case 'DELETE': return '#DC2626';
+      case 'VIEW': return '#8B5CF6';
+      case 'EXPORT': return '#6366F1';
+      case 'PRINT': return '#64748B';
+      default: return '#9CA3AF';
     }
   };
 
@@ -366,7 +408,7 @@ export default function HistoryScreen({ navigation }) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color="#3B82F6" />
         <Text style={styles.loadingText}>Loading history...</Text>
       </View>
     );
@@ -374,53 +416,6 @@ export default function HistoryScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Title style={styles.headerTitle}>History</Title>
-          <Text style={styles.headerSubtitle}>
-            {stats.today} today • {stats.total} total
-          </Text>
-        </View>
-        <View style={styles.headerActions}>
-          <Menu
-            visible={exportMenuVisible}
-            onDismiss={() => setExportMenuVisible(false)}
-            anchor={
-              <IconButton
-                icon="download"
-                size={24}
-                onPress={() => setExportMenuVisible(true)}
-                disabled={exporting}
-              />
-            }
-          >
-            <Menu.Item 
-              onPress={() => handleExport('pdf')} 
-              title="Export as PDF" 
-              leadingIcon="file-pdf"
-              disabled={exporting}
-            />
-            <Menu.Item 
-              onPress={() => handleExport('csv')} 
-              title="Export as CSV" 
-              leadingIcon="file-delimited"
-              disabled={exporting}
-            />
-          </Menu>
-          <IconButton
-            icon={viewMode === 'list' ? 'view-list' : 'view-grid'}
-            size={24}
-            onPress={() => setViewMode(viewMode === 'list' ? 'table' : 'list')}
-          />
-          <IconButton
-            icon="filter"
-            size={24}
-            onPress={() => setFilterVisible(true)}
-          />
-        </View>
-      </View>
-
       {/* Search Bar */}
       <Searchbar
         placeholder="Search history..."
@@ -430,30 +425,24 @@ export default function HistoryScreen({ navigation }) {
       />
 
       {/* Stats Cards */}
-      {/* Compact Stats Cards */}
-{/* Ultra Compact Stats */}
-<View style={styles.ultraStatsContainer}>
-  {/* Chip-Style Stats */}
-<ScrollView 
-  horizontal 
-  showsHorizontalScrollIndicator={false} 
-  style={styles.chipStatsContainer}
-  contentContainerStyle={styles.chipStatsContent}
->
-  <Chip icon="today" mode="outlined" style={styles.statChip}>
-    Today: {stats.today}
-  </Chip>
-  <Chip icon="calendar-week" mode="outlined" style={styles.statChip}>
-    Week: {stats.week}
-  </Chip>
-  <Chip icon="calendar-month" mode="outlined" style={styles.statChip}>
-    Month: {stats.month}
-  </Chip>
-  <Chip icon="calendar" mode="outlined" style={styles.statChip}>
-    Total: {stats.total}
-  </Chip>
-</ScrollView>
-</View>
+      <View style={styles.statsRow}>
+        <View style={styles.statBox}>
+          <Text style={styles.statValue}>{stats.today}</Text>
+          <Text style={styles.statLabel}>Today</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statValue}>{stats.week}</Text>
+          <Text style={styles.statLabel}>Week</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statValue}>{stats.month}</Text>
+          <Text style={styles.statLabel}>Month</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statValue}>{stats.total}</Text>
+          <Text style={styles.statLabel}>Total</Text>
+        </View>
+      </View>
 
       {/* Active Filters */}
       {(selectedAction !== 'all' || selectedDateRange !== 'week') && (
@@ -733,7 +722,7 @@ export default function HistoryScreen({ navigation }) {
       {/* Loading Overlay for Export */}
       {exporting && (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#007AFF" />
+          <ActivityIndicator size="large" color="#3B82F6" />
           <Text style={styles.loadingText}>Exporting...</Text>
         </View>
       )}
@@ -765,48 +754,38 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
-    backgroundColor: '#fff',
-  },
-  headerTitle: {
-    fontSize: 24,
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 2,
-  },
-  headerActions: {
-    flexDirection: 'row',
-  },
   searchbar: {
     margin: 16,
     marginTop: 8,
     elevation: 2,
   },
-  ultraStatsContainer: {
-  marginTop: 8,
-  marginBottom: 8,
-  paddingHorizontal: 16,
-  height: 40,
-},
-ultraStatChip: {
-  marginRight: 8,
-  height: 32,
-},
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    marginBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  statBox: {
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    minWidth: 70,
+  },
   statValue: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
+    color: '#1E293B',
   },
   statLabel: {
     fontSize: 11,
-    color: '#666',
+    color: '#64748B',
+    marginTop: 4,
   },
   activeFilters: {
     flexDirection: 'row',
